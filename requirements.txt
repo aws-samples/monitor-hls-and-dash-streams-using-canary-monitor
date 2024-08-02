@@ -1,0 +1,5 @@
+urllib3
+lxml
+boto3
+botocore
+Jinja2

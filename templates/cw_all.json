@@ -1,0 +1,870 @@
+{
+    "start": "-PT1H",
+    "widgets": [
+        {
+            "height": 4,
+            "width": 4,
+            "y": 12,
+            "x": 8,
+            "type": "metric",
+            "properties": {
+                "metrics": [
+{% for item in metrics %}
+  [ "CanaryMonitor", "segmenttimeouterror", {{ item }}, {"accountId": "{{accountid}}"} ]{% if not loop.last %},{% endif %}
+{% endfor %}
+                ],
+                "view": "timeSeries",
+                "stacked": false,
+                "region": "{{region}}",
+                "stat": "Sum",
+                "period": 60,
+                "title": "Segment Timeout",
+                "yAxis": {
+                    "left": {
+                        "showUnits": false,
+                        "label": "",
+                        "min": 0
+                    },
+                    "right": {
+                        "showUnits": false
+                    }
+                },
+                "legend": {
+                    "position": "bottom"
+                },
+                "liveData": true
+            }
+        },
+        {
+            "height": 4,
+            "width": 4,
+            "y": 4,
+            "x": 4,
+            "type": "metric",
+            "properties": {
+                "metrics": [
+{% for item in metrics %}
+  [ "CanaryMonitor", "manifest4xx", {{ item }}, {"accountId": "{{accountid}}"} ]{% if not loop.last %},{% endif %}
+{% endfor %}
+                ],
+                "view": "timeSeries",
+                "stacked": false,
+                "region": "{{region}}",
+                "stat": "Sum",
+                "period": 60,
+                "title": "Manifest 4xx",
+                "yAxis": {
+                    "left": {
+                        "showUnits": false,
+                        "label": "",
+                        "min": 0
+                    },
+                    "right": {
+                        "showUnits": false
+                    }
+                },
+                "legend": {
+                    "position": "bottom"
+                },
+                "liveData": true
+            }
+        },
+        {
+            "height": 4,
+            "width": 4,
+            "y": 12,
+            "x": 12,
+            "type": "metric",
+            "properties": {
+                "metrics": [
+{% for item in metrics %}
+  [ "CanaryMonitor", "segment4xx", {{ item }}, {"accountId": "{{accountid}}"} ]{% if not loop.last %},{% endif %}
+{% endfor %}
+                ],
+                "view": "timeSeries",
+                "stacked": false,
+                "region": "{{region}}",
+                "stat": "Sum",
+                "period": 60,
+                "title": "Segment 4xx",
+                "yAxis": {
+                    "left": {
+                        "showUnits": false,
+                        "label": "",
+                        "min": 0
+                    },
+                    "right": {
+                        "showUnits": false
+                    }
+                },
+                "legend": {
+                    "position": "bottom"
+                },
+                "liveData": true
+            }
+        },
+        {
+            "height": 4,
+            "width": 4,
+            "y": 4,
+            "x": 8,
+            "type": "metric",
+            "properties": {
+                "metrics": [
+{% for item in metrics %}
+  [ "CanaryMonitor", "manifest5xx", {{ item }}, {"accountId": "{{accountid}}"} ]{% if not loop.last %},{% endif %}
+{% endfor %}
+                ],
+                "view": "timeSeries",
+                "stacked": false,
+                "region": "{{region}}",
+                "stat": "Sum",
+                "period": 60,
+                "title": "Manifest 5xx",
+                "yAxis": {
+                    "left": {
+                        "showUnits": false,
+                        "label": "",
+                        "min": 0
+                    },
+                    "right": {
+                        "showUnits": false
+                    }
+                },
+                "legend": {
+                    "position": "bottom"
+                },
+                "liveData": true
+            }
+        },
+        {
+            "height": 4,
+            "width": 4,
+            "y": 12,
+            "x": 16,
+            "type": "metric",
+            "properties": {
+                "metrics": [
+{% for item in metrics %}
+  [ "CanaryMonitor", "segment5xx", {{ item }}, {"accountId": "{{accountid}}"} ]{% if not loop.last %},{% endif %}
+{% endfor %}
+                ],
+                "view": "timeSeries",
+                "stacked": false,
+                "region": "{{region}}",
+                "stat": "Sum",
+                "period": 60,
+                "title": "Segment 5xx",
+                "yAxis": {
+                    "left": {
+                        "showUnits": false,
+                        "label": "",
+                        "min": 0
+                    },
+                    "right": {
+                        "showUnits": false
+                    }
+                },
+                "legend": {
+                    "position": "bottom"
+                },
+                "liveData": true
+            }
+        },
+        {
+            "height": 4,
+            "width": 4,
+            "y": 0,
+            "x": 0,
+            "type": "metric",
+            "properties": {
+                "metrics": [
+{% for item in metrics %}
+  [ "CanaryMonitor", "contentshortage", {{ item }}, {"accountId": "{{accountid}}"} ]{% if not loop.last %},{% endif %}
+{% endfor %}
+                ],
+                "view": "timeSeries",
+                "stacked": false,
+                "region": "{{region}}",
+                "stat": "Sum",
+                "period": 60,
+                "title": "Content shortage",
+                "yAxis": {
+                    "left": {
+                        "showUnits": false,
+                        "label": "",
+                        "min": 0
+                    },
+                    "right": {
+                        "showUnits": false
+                    }
+                },
+                "legend": {
+                    "position": "bottom"
+                },
+                "liveData": true
+            }
+        },
+        {
+            "height": 4,
+            "width": 4,
+            "y": 0,
+            "x": 20,
+            "type": "metric",
+            "properties": {
+                "metrics": [
+{% for item in metrics %}
+  [ "CanaryMonitor", "manifestresponsetime", {{ item }}, {"accountId": "{{accountid}}"} ]{% if not loop.last %},{% endif %}
+{% endfor %}
+                ],
+                "view": "timeSeries",
+                "stacked": false,
+                "region": "{{region}}",
+                "stat": "Maximum",
+                "period": 60,
+                "title": "Manifest Response Time (max) [msec]",
+                "yAxis": {
+                    "left": {
+                        "showUnits": false,
+                        "label": "",
+                        "min": 0
+                    },
+                    "right": {
+                        "showUnits": false
+                    }
+                },
+                "legend": {
+                    "position": "bottom"
+                },
+                "liveData": true
+            }
+        },
+        {
+            "height": 4,
+            "width": 4,
+            "y": 12,
+            "x": 4,
+            "type": "metric",
+            "properties": {
+                "metrics": [
+{% for item in metrics %}
+  [ "CanaryMonitor", "segmentresponsetime", {{ item }}, {"accountId": "{{accountid}}"} ]{% if not loop.last %},{% endif %}
+{% endfor %}
+                ],
+                "view": "timeSeries",
+                "stacked": false,
+                "region": "{{region}}",
+                "stat": "Maximum",
+                "period": 60,
+                "title": "Segment Response Time (max) [msec]",
+                "yAxis": {
+                    "left": {
+                        "showUnits": false,
+                        "label": "",
+                        "min": 0
+                    },
+                    "right": {
+                        "showUnits": false
+                    }
+                },
+                "legend": {
+                    "position": "bottom"
+                },
+                "liveData": true
+            }
+        },
+        {
+            "height": 4,
+            "width": 4,
+            "y": 4,
+            "x": 12,
+            "type": "metric",
+            "properties": {
+                "metrics": [
+{% for item in metrics %}
+  [ "CanaryMonitor", "manifestduration", {{ item }}, {"accountId": "{{accountid}}"} ]{% if not loop.last %},{% endif %}
+{% endfor %}
+                ],
+                "view": "timeSeries",
+                "stacked": false,
+                "region": "{{region}}",
+                "stat": "Minimum",
+                "period": 60,
+                "title": "Manifest Duration (min) [mins]",
+                "yAxis": {
+                    "left": {
+                        "showUnits": false,
+                        "label": "",
+                        "min": 0
+                    },
+                    "right": {
+                        "showUnits": false
+                    }
+                },
+                "legend": {
+                    "position": "bottom"
+                },
+                "liveData": true
+            }
+        },
+        {
+            "height": 4,
+            "width": 4,
+            "y": 0,
+            "x": 12,
+            "type": "metric",
+            "properties": {
+                "metrics": [
+{% for item in metrics %}
+  [ "CanaryMonitor", "pdtdelta", {{ item }}, {"accountId": "{{accountid}}"} ]{% if not loop.last %},{% endif %}
+{% endfor %}
+                ],
+                "view": "timeSeries",
+                "stacked": false,
+                "region": "{{region}}",
+                "stat": "Minimum",
+                "period": 60,
+                "title": "PDT To Wall Clock Delta (min) [sec]",
+                "yAxis": {
+                    "left": {
+                        "showUnits": false,
+                        "label": ""
+                    },
+                    "right": {
+                        "showUnits": false
+                    }
+                },
+                "legend": {
+                    "position": "bottom"
+                },
+                "liveData": true
+            }
+        },
+        {
+            "height": 4,
+            "width": 4,
+            "y": 0,
+            "x": 4,
+            "type": "metric",
+            "properties": {
+                "metrics": [
+{% for item in metrics %}
+  [ "CanaryMonitor", "stale", {{ item }}, {"accountId": "{{accountid}}"} ]{% if not loop.last %},{% endif %}
+{% endfor %}
+                ],
+                "view": "timeSeries",
+                "stacked": false,
+                "region": "{{region}}",
+                "stat": "Maximum",
+                "period": 60,
+                "title": "Staleness",
+                "yAxis": {
+                    "left": {
+                        "showUnits": false,
+                        "label": "",
+                        "min": 0
+                    },
+                    "right": {
+                        "showUnits": false
+                    }
+                },
+                "legend": {
+                    "position": "bottom"
+                },
+                "liveData": true
+            }
+        },
+        {
+            "height": 4,
+            "width": 4,
+            "y": 0,
+            "x": 8,
+            "type": "metric",
+            "properties": {
+                "metrics": [
+{% for item in metrics %}
+  [ "CanaryMonitor", "discontinuity", {{ item }}, {"accountId": "{{accountid}}"} ]{% if not loop.last %},{% endif %}
+{% endfor %}
+                ],
+                "view": "timeSeries",
+                "stacked": false,
+                "region": "{{region}}",
+                "stat": "Sum",
+                "period": 60,
+                "title": "Discontinuity",
+                "yAxis": {
+                    "left": {
+                        "showUnits": false,
+                        "label": "",
+                        "min": 0
+                    },
+                    "right": {
+                        "showUnits": false
+                    }
+                },
+                "legend": {
+                    "position": "bottom"
+                },
+                "liveData": true
+            }
+        },
+        {
+            "height": 4,
+            "width": 4,
+            "y": 8,
+            "x": 8,
+            "type": "metric",
+            "properties": {
+                "metrics": [
+{% for item in metrics %}
+  [ "CanaryMonitor", "adbreak", {{ item }}, {"accountId": "{{accountid}}"} ]{% if not loop.last %},{% endif %}
+{% endfor %}
+                ],
+                "view": "timeSeries",
+                "stacked": false,
+                "region": "{{region}}",
+                "stat": "Sum",
+                "period": 60,
+                "title": "Ad Break Start",
+                "yAxis": {
+                    "left": {
+                        "showUnits": false,
+                        "label": "",
+                        "min": 0
+                    },
+                    "right": {
+                        "showUnits": false
+                    }
+                },
+                "legend": {
+                    "position": "bottom"
+                },
+                "liveData": true
+            }
+        },
+        {
+            "height": 4,
+            "width": 4,
+            "y": 8,
+            "x": 12,
+            "type": "metric",
+            "properties": {
+                "metrics": [
+{% for item in metrics %}
+  [ "CanaryMonitor", "addurationadvertised", {{ item }}, {"accountId": "{{accountid}}"} ]{% if not loop.last %},{% endif %}
+{% endfor %}
+                ],
+                "view": "timeSeries",
+                "stacked": false,
+                "region": "{{region}}",
+                "stat": "Minimum",
+                "period": 60,
+                "title": "Ad Break Advertised Duration [sec]",
+                "yAxis": {
+                    "left": {
+                        "showUnits": false,
+                        "label": "",
+                        "min": 0
+                    },
+                    "right": {
+                        "showUnits": false
+                    }
+                },
+                "legend": {
+                    "position": "bottom"
+                },
+                "liveData": true
+            }
+        },
+        {
+            "height": 4,
+            "width": 4,
+            "y": 12,
+            "x": 20,
+            "type": "metric",
+            "properties": {
+                "metrics": [
+{% for item in metrics %}
+  [ "CanaryMonitor", "segmentsize", {{ item }}, {"accountId": "{{accountid}}"} ]{% if not loop.last %},{% endif %}
+{% endfor %}
+                ],
+                "view": "timeSeries",
+                "stacked": false,
+                "region": "{{region}}",
+                "stat": "Maximum",
+                "period": 60,
+                "title": "Segment Size [bytes]",
+                "yAxis": {
+                    "left": {
+                        "showUnits": false,
+                        "label": "",
+                        "min": 0
+                    },
+                    "right": {
+                        "showUnits": false
+                    }
+                },
+                "legend": {
+                    "position": "bottom"
+                },
+                "liveData": true
+            }
+        },
+        {
+            "height": 4,
+            "width": 4,
+            "y": 16,
+            "x": 0,
+            "type": "metric",
+            "properties": {
+                "metrics": [
+{% for item in metrics %}
+  [ "CanaryMonitor", "segmentduration", {{ item }}, {"accountId": "{{accountid}}"} ]{% if not loop.last %},{% endif %}
+{% endfor %}
+                ],
+                "view": "timeSeries",
+                "stacked": false,
+                "region": "{{region}}",
+                "stat": "Maximum",
+                "period": 60,
+                "title": "Segment Duration (max) [sec]",
+                "yAxis": {
+                    "left": {
+                        "showUnits": false,
+                        "label": "",
+                        "min": 0
+                    },
+                    "right": {
+                        "showUnits": false
+                    }
+                },
+                "legend": {
+                    "position": "bottom"
+                },
+                "liveData": true
+            }
+        },
+        {
+            "height": 4,
+            "width": 4,
+            "y": 0,
+            "x": 16,
+            "type": "metric",
+            "properties": {
+                "metrics": [
+{% for item in metrics %}
+  [ "CanaryMonitor", "ptsdelta", {{ item }}, {"accountId": "{{accountid}}"} ]{% if not loop.last %},{% endif %}
+{% endfor %}
+                ],
+                "view": "timeSeries",
+                "stacked": false,
+                "region": "{{region}}",
+                "stat": "Maximum",
+                "period": 60,
+                "title": "PTS Delta (max) [sec]",
+                "yAxis": {
+                    "left": {
+                        "showUnits": false,
+                        "label": "",
+                        "min": 0
+                    },
+                    "right": {
+                        "showUnits": false
+                    }
+                },
+                "legend": {
+                    "position": "bottom"
+                },
+                "liveData": true,
+                "annotations": {
+                    "horizontal": [
+                        {
+                            "label": "Threshold",
+                            "value": 0.1
+                        }
+                    ]
+                }
+            }
+        },
+        {
+            "height": 4,
+            "width": 4,
+            "y": 8,
+            "x": 16,
+            "type": "metric",
+            "properties": {
+                "metrics": [
+{% for item in metrics %}
+  [ "CanaryMonitor", "addurationactual", {{ item }}, {"accountId": "{{accountid}}"} ]{% if not loop.last %},{% endif %}
+{% endfor %}
+                ],
+                "view": "timeSeries",
+                "stacked": false,
+                "region": "{{region}}",
+                "stat": "Minimum",
+                "period": 60,
+                "title": "Ad Break Actual Duration [sec]",
+                "yAxis": {
+                    "left": {
+                        "showUnits": false,
+                        "label": "",
+                        "min": 0
+                    },
+                    "right": {
+                        "showUnits": false
+                    }
+                },
+                "legend": {
+                    "position": "bottom"
+                },
+                "liveData": true
+            }
+        },
+        {
+            "height": 4,
+            "width": 4,
+            "y": 8,
+            "x": 20,
+            "type": "metric",
+            "properties": {
+                "metrics": [
+{% for item in metrics %}
+  [ "CanaryMonitor", "addurationdelta", {{ item }}, {"accountId": "{{accountid}}"} ]{% if not loop.last %},{% endif %}
+{% endfor %}
+                ],
+                "view": "timeSeries",
+                "stacked": false,
+                "region": "{{region}}",
+                "stat": "Minimum",
+                "period": 60,
+                "title": "Ad Break Duration Delta (actual - advertised) [sec]",
+                "yAxis": {
+                    "left": {
+                        "showUnits": false,
+                        "label": "",
+                        "min": 0
+                    },
+                    "right": {
+                        "showUnits": false
+                    }
+                },
+                "annotations": {
+                    "horizontal": [
+                        {
+                            "color": "#2ca02c",
+                            "value": 0
+                        }
+                    ]
+                },               
+                "legend": {
+                    "position": "bottom"
+                },
+                "liveData": true
+            }
+        },
+        {
+            "height": 4,
+            "width": 4,
+            "y": 12,
+            "x": 0,
+            "type": "metric",
+            "properties": {
+                "metrics": [
+{% for item in metrics %}
+  [ "CanaryMonitor", "adavailnum", {{ item }}, {"accountId": "{{accountid}}"} ]{% if not loop.last %},{% endif %}
+{% endfor %}
+                ],
+                "view": "timeSeries",
+                "stacked": false,
+                "region": "{{region}}",
+                "stat": "Maximum",
+                "period": 60,
+                "title": "Ad Break Avail Num",
+                "yAxis": {
+                    "left": {
+                        "showUnits": false,
+                        "label": "",
+                        "min": 0
+                    },
+                    "right": {
+                        "showUnits": false
+                    }
+                },           
+                "legend": {
+                    "position": "bottom"
+                },
+                "liveData": true
+            }
+        },
+        {
+            "height": 4,
+            "width": 4,
+            "y": 4,
+            "x": 16,
+            "type": "metric",
+            "properties": {
+                "metrics": [
+{% for item in metrics %}
+  [ "CanaryMonitor", "trackingresponsetime", {{ item }}, {"accountId": "{{accountid}}"} ]{% if not loop.last %},{% endif %}
+{% endfor %}
+                ],
+                "view": "timeSeries",
+                "stacked": false,
+                "region": "{{region}}",
+                "stat": "Maximum",
+                "period": 60,
+                "title": "Tracking Response Time (max) [msec]",
+                "yAxis": {
+                    "left": {
+                        "showUnits": false,
+                        "label": "",
+                        "min": 0
+                    },
+                    "right": {
+                        "showUnits": false
+                    }
+                },
+                "legend": {
+                    "position": "bottom"
+                },
+                "liveData": true
+            }
+        },
+        {
+            "height": 4,
+            "width": 4,
+            "y": 4,
+            "x": 20,
+            "type": "metric",
+            "properties": {
+                "metrics": [
+{% for item in metrics %}
+  [ "CanaryMonitor", "trackingtimeouterror", {{ item }}, {"accountId": "{{accountid}}"} ]{% if not loop.last %},{% endif %}
+{% endfor %}
+                ],
+                "view": "timeSeries",
+                "stacked": false,
+                "region": "{{region}}",
+                "stat": "Sum",
+                "period": 60,
+                "title": "Tracking Timeout",
+                "yAxis": {
+                    "left": {
+                        "showUnits": false,
+                        "label": "",
+                        "min": 0
+                    },
+                    "right": {
+                        "showUnits": false
+                    }
+                },
+                "legend": {
+                    "position": "bottom"
+                },
+                "liveData": true
+            }
+        },
+        {
+            "height": 4,
+            "width": 4,
+            "y": 8,
+            "x": 0,
+            "type": "metric",
+            "properties": {
+                "metrics": [
+{% for item in metrics %}
+  [ "CanaryMonitor", "tracking4xx", {{ item }}, {"accountId": "{{accountid}}"} ]{% if not loop.last %},{% endif %}
+{% endfor %}
+                ],
+                "view": "timeSeries",
+                "stacked": false,
+                "region": "{{region}}",
+                "stat": "Sum",
+                "period": 60,
+                "title": "Tracking 4xx",
+                "yAxis": {
+                    "left": {
+                        "showUnits": false,
+                        "label": "",
+                        "min": 0
+                    },
+                    "right": {
+                        "showUnits": false
+                    }
+                },
+                "legend": {
+                    "position": "bottom"
+                },
+                "liveData": true
+            }
+        },
+        {
+            "height": 4,
+            "width": 4,
+            "y": 8,
+            "x": 4,
+            "type": "metric",
+            "properties": {
+                "metrics": [
+{% for item in metrics %}
+  [ "CanaryMonitor", "tracking5xx", {{ item }}, {"accountId": "{{accountid}}"} ]{% if not loop.last %},{% endif %}
+{% endfor %}
+                ],
+                "view": "timeSeries",
+                "stacked": false,
+                "region": "{{region}}",
+                "stat": "Sum",
+                "period": 60,
+                "title": "Tracking 5xx",
+                "yAxis": {
+                    "left": {
+                        "showUnits": false,
+                        "label": "",
+                        "min": 0
+                    },
+                    "right": {
+                        "showUnits": false
+                    }
+                },
+                "legend": {
+                    "position": "bottom"
+                },
+                "liveData": true
+            }
+        },
+        {
+            "height": 4,
+            "width": 4,
+            "y": 4,
+            "x": 0,
+            "type": "metric",
+            "properties": {
+                "metrics": [
+{% for item in metrics %}
+  [ "CanaryMonitor", "manifesttimeouterror", {{ item }}, {"accountId": "{{accountid}}"} ]{% if not loop.last %},{% endif %}
+{% endfor %}
+                ],
+                "view": "timeSeries",
+                "stacked": false,
+                "region": "{{region}}",
+                "stat": "Sum",
+                "period": 60,
+                "title": "Manifest Timeout",
+                "yAxis": {
+                    "left": {
+                        "showUnits": false,
+                        "label": "",
+                        "min": 0
+                    },
+                    "right": {
+                        "showUnits": false
+                    }
+                },
+                "legend": {
+                    "position": "bottom"
+                },
+                "liveData": true
+            }
+        }
+    ]
+}
