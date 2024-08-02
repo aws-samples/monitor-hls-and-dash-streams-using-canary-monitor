@@ -1,10 +1,10 @@
 ## Monitor HLS and DASH Streams Using Canary Monitor
 
-The canary monitor is a tool, which, similarly to a player, downloads and inspects HLS or DASH manifests from an origin at regular intervals. It can also download segments and ad-tracking data. It inspects the data after every download, runs a check for a large set of validations, creates logs and publishes custom metrics to CloudWatch. It works with various origins, but has been primarily tested on streams originating from AWS Elemental MediaPackage and AWS Elemental MediaTailor. When pointed towards a MediaTailor origin, it can detect ad break content replaced by the service and validate the ad-tracking data during ad breaks.  
-  
-The script expects the user to provide one or more HLS or DASH live stream manifest URLs to monitor, which are accessible from the host where the script is running. The HLS manifest URL can be pointing either to the main or a specific rendition manifest. When pointed to the main HLS manifest, the script can pick and monitor one specific, multiple or all renditions. Once started, the script it will continue sending an HTTP GET request for all provided manifest URLs at a regular interval (default 5 seconds) until the process is stopped.
-  
-Every time the script downloads a manifest it performs several checks on the content of the manifest and optionally emits CloudWatch metrics. The checks include monitoring for staleness, discontinuities, spec compliance, ad breaks and audio video misalignment. If monitoring of MediaTailor ad-tracking data is enabled, the script looks for avail information during detected ad breaks. See below table, which highlights some important log messages, which demonstrate the type of checks that the script performs.
+The canary monitor is a tool, which, like a player, downloads and inspects HLS or DASH manifests from an origin at regular intervals. It can also download segments and ad-tracking data. It inspects the data after every download, runs a check for a large set of validations, creates logs and publishes custom metrics to Amazon CloudWatch. It works with various origins, but has been primarily designed to monitor  streams originating from AWS Elemental MediaPackage and AWS Elemental MediaTailor. When pointed towards a MediaTailor origin, it can detect ad-break content replaced by the service and validate the ad-tracking data during ad breaks. 
+
+The script expects the user to provide one or more HLS or DASH live stream manifest URLs to monitor, which must be accessible from the machine where the script is running. The HLS manifest URL can be pointing to either the top-level (multivariant) manifest, or a specific rendition’s manifest. When pointed to the top-level HLS manifest, the script can pick and monitor one specific rendition, multiple renditions, or all renditions. Once started, the script  continues to send an HTTP GET request for all provided manifest URLs at regular intervals (default 5 seconds) until you stop the process.
+
+Each time the script downloads a manifest, it performs checks on the content of the manifest and optionally emits CloudWatch metrics. The checks include monitoring for staleness, discontinuities, spec compliance, ad breaks, and audio/video misalignment. If monitoring of MediaTailor ad-tracking data is enabled, the script looks for avail information during detected ad breaks. See the following table, which highlights important log messages and details the type of checks the script performs.
 
 ### Checks
 
@@ -35,7 +35,7 @@ Every time the script downloads a manifest it performs several checks on the con
 
 ### Metrics
 
-The script sends the following metrics when configured to send metrics to CloudWatch. Metrics are created under *CanaryMonitor* custom namespace with 2 additional dimensions - *Endpoint* (endpoint identifier) ** and *Type* (*hls* or *dash)*.
+The script sends several metrics to CloudWatch when run with --cwmetrics argument. Metrics are created under *CanaryMonitor* custom namespace with 2 additional dimensions - *Endpoint* (endpoint identifier) ** and *Type* (*hls* or *dash)*.
 
 | Metric Name	| Description | Value	|
 |---	|---	|---	|
