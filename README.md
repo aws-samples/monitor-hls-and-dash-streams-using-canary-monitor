@@ -77,6 +77,13 @@ The canary monitor is a Python 3 script, which requires a system with Python env
 
 See section “Sending metrics to AWS Cloudwatch” for additional requirements when sending metrics to AWS Cloudwatch.
 
+## Install
+
+```
+$ pip install -r requirements.txt
+```
+
+
 ## Running the Script
 
 To start the script, you need to provide a single URL through --url argument or a list of URLs through the *endpoints.csv* file. The file must be in CSV format, where each line which is not a comment has 2 or 3 columns. The 1st column represents a unique identifier of your origin endpoint and it can be the same between HLS and DASH. It is used for identifying the endpoint in the logs and as a dimension for the metrics in CloudWatch. For HLS streams, a rendition identifier will be appended to the string, e.g *v1* for 1st video rendition or *a2* for 2nd audio rendition. The 2nd column represents the manifest URL. The 3rd column is optional and represents the tracking URL. See this example for an *endpoints.csv* file:
