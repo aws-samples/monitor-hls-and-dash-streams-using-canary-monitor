@@ -1190,7 +1190,11 @@ def monitor(tlogger, endpoint:dict, rendition:dict, renditionname:str, proberesp
                       manifestinfo['spdatetime'] = datetime.datetime.strptime(xmlsupplementalpropertyutctime, '%Y-%m-%dT%H:%M:%S.%fZ')
                       foundsupplementalproperty = True
                     except Exception:
-                      logger.error('Error parsing SupplementalProperty UTC time: ' + str(xmlsupplementalpropertyutctime))
+                      try:
+                        manifestinfo['spdatetime'] = datetime.datetime.strptime(xmlsupplementalpropertyutctime, '%Y-%m-%dT%H:%M:%SZ')
+                        foundsupplementalproperty = True
+                      except Exception:
+                        logger.error('Error parsing SupplementalProperty UTC time: ' + str(xmlsupplementalpropertyutctime))
 
                 # Go through adaptation sets
                 xmladaptationsets = xmlperiod.findall('default:AdaptationSet', ns)
@@ -2521,27 +2525,27 @@ if __name__ == '__main__':
   lockm = threading.Lock()
   dashboardcreated = False
   segmentationtypeidmap = {
-'00': 'Not Indicated',
-'01': 'Content Identification',
-'16': 'Program Start',
-'17': 'Program End',
-'32': 'Chapter Start',
-'33': 'Chapter End',
-'34': 'Break Start',
-'35': 'Break End',
-'48': 'Provider Advertisement Start',
-'49': 'Provider Advertisement End',
-'50': 'Distributor Advertisement Start',
-'51': 'Distributor Advertisement End',
-'52': 'Provider Placement Opportunity Start',
-'53': 'Provider Placement Opportunity End',
-'54': 'Distributor Placement Opportunity Start',
-'55': 'Distributor Placement Opportunity End',
-'56': 'Provider Overlay Placement Opportunity Start',
-'57': 'Provider Overlay Placement Opportunity End',
-'58': 'Distributor Overlay Placement Opportunity Start',
-'59': 'Distributor Overlay Placement Opportunity End'
-}
+    '00': 'Not Indicated',
+    '01': 'Content Identification',
+    '16': 'Program Start',
+    '17': 'Program End',
+    '32': 'Chapter Start',
+    '33': 'Chapter End',
+    '34': 'Break Start',
+    '35': 'Break End',
+    '48': 'Provider Advertisement Start',
+    '49': 'Provider Advertisement End',
+    '50': 'Distributor Advertisement Start',
+    '51': 'Distributor Advertisement End',
+    '52': 'Provider Placement Opportunity Start',
+    '53': 'Provider Placement Opportunity End',
+    '54': 'Distributor Placement Opportunity Start',
+    '55': 'Distributor Placement Opportunity End',
+    '56': 'Provider Overlay Placement Opportunity Start',
+    '57': 'Provider Overlay Placement Opportunity End',
+    '58': 'Distributor Overlay Placement Opportunity Start',
+    '59': 'Distributor Overlay Placement Opportunity End'
+  }
   adbreakstartsegmentationtypeids = { '34', '48', '50', '52', '54' }
   eventtypestolookfor = {'impression', 'start', 'firstQuartile', 'midpoint', 'thirdQuartile', 'complete'}
 
@@ -2592,43 +2596,43 @@ if __name__ == '__main__':
   args = parser.parse_args()
 
   userargs = {
-'endpointslistfile': args.endpointslistfile if args.endpointslistfile else 'endpoints.csv',
-'url': args.url if args.url else '',
-'httptimeout': args.httptimeout if args.httptimeout else 3,
-'frequency': args.frequency if args.frequency else 5,
-'stale': args.stale if args.stale else 12,
-'property': args.property if args.property else '',
-'label': args.label if args.label else 'test',
-'dayfolder': args.dayfolder if args.dayfolder else False,
-'cwmetrics': args.cwmetrics if args.cwmetrics else False,
-'cwregion': args.cwregion if args.cwregion else 'us-west-2',
-'dashboards': args.dashboards if args.dashboards else False,
-'gzip': args.gzip if args.gzip else False,
-'manifests': args.manifests if args.manifests else False,
-'segments': args.segments if args.segments else False,
-'tracking': args.tracking if args.tracking else False,
-'playheadawaretracking': args.playheadawaretracking if args.playheadawaretracking else False,
-'checktrackingevents': args.checktrackingevents if args.checktrackingevents else False,
-'trackingrequests': args.trackingrequests if args.trackingrequests else False,
-'logsfolder': args.logsfolder if args.logsfolder else '',
-'manifestsfolder': args.manifestsfolder if args.manifestsfolder else '',
-'segmentsfolder': args.segmentsfolder if args.segmentsfolder else '',
-'dashboardsfolder': args.dashboardsfolder if args.dashboardsfolder else '',
-'templatesfolder': args.templatesfolder if args.templatesfolder else str(Path(os.path.dirname(os.path.realpath(__file__)), 'templates')),
-'trackingfolder': args.trackingfolder if args.trackingfolder else '',
-'allrenditions': args.allrenditions if args.allrenditions else False,
-'playerrenditions': args.playerrenditions if args.playerrenditions else False,
-'renditiontype': args.renditiontype if args.renditiontype else 'v1',
-'endpointtype': args.endpointtype if args.endpointtype else '',
-'segmentrequests': args.segmentrequests if args.segmentrequests else False,
-'initialinputbuffersize': 60,
-'loglevel': args.loglevel if args.loglevel else 'INFO',
-'stdout': args.stdout if args.stdout else False,
-'comparemanifests': args.comparemanifests if args.comparemanifests else False,
-'loadtest': args.loadtest if args.loadtest else False,
-'emt': args.emt if args.emt else False,
-'emtadsegmentstring': args.emtadsegmentstring if args.emtadsegmentstring else 'asset'
-}
+    'endpointslistfile': args.endpointslistfile if args.endpointslistfile else 'endpoints.csv',
+    'url': args.url if args.url else '',
+    'httptimeout': args.httptimeout if args.httptimeout else 3,
+    'frequency': args.frequency if args.frequency else 5,
+    'stale': args.stale if args.stale else 12,
+    'property': args.property if args.property else '',
+    'label': args.label if args.label else 'test',
+    'dayfolder': args.dayfolder if args.dayfolder else False,
+    'cwmetrics': args.cwmetrics if args.cwmetrics else False,
+    'cwregion': args.cwregion if args.cwregion else 'us-west-2',
+    'dashboards': args.dashboards if args.dashboards else False,
+    'gzip': args.gzip if args.gzip else False,
+    'manifests': args.manifests if args.manifests else False,
+    'segments': args.segments if args.segments else False,
+    'tracking': args.tracking if args.tracking else False,
+    'playheadawaretracking': args.playheadawaretracking if args.playheadawaretracking else False,
+    'checktrackingevents': args.checktrackingevents if args.checktrackingevents else False,
+    'trackingrequests': args.trackingrequests if args.trackingrequests else False,
+    'logsfolder': args.logsfolder if args.logsfolder else '',
+    'manifestsfolder': args.manifestsfolder if args.manifestsfolder else '',
+    'segmentsfolder': args.segmentsfolder if args.segmentsfolder else '',
+    'dashboardsfolder': args.dashboardsfolder if args.dashboardsfolder else '',
+    'templatesfolder': args.templatesfolder if args.templatesfolder else str(Path(os.path.dirname(os.path.realpath(__file__)), 'templates')),
+    'trackingfolder': args.trackingfolder if args.trackingfolder else '',
+    'allrenditions': args.allrenditions if args.allrenditions else False,
+    'playerrenditions': args.playerrenditions if args.playerrenditions else False,
+    'renditiontype': args.renditiontype if args.renditiontype else 'v1',
+    'endpointtype': args.endpointtype if args.endpointtype else '',
+    'segmentrequests': args.segmentrequests if args.segmentrequests else False,
+    'initialinputbuffersize': 60,
+    'loglevel': args.loglevel if args.loglevel else 'INFO',
+    'stdout': args.stdout if args.stdout else False,
+    'comparemanifests': args.comparemanifests if args.comparemanifests else False,
+    'loadtest': args.loadtest if args.loadtest else False,
+    'emt': args.emt if args.emt else False,
+    'emtadsegmentstring': args.emtadsegmentstring if args.emtadsegmentstring else 'asset'
+  }
 
   # Create folder structure
   if userargs['logsfolder']:
