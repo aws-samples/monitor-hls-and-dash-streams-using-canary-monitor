@@ -9,11 +9,13 @@ The canary monitor is a tool, which, like a player, downloads and inspects HLS o
 Python 3.9 or newer with following libraries:
 
 - lxml
-- m3u8
 - deepdiff
-- jinja2
+- m3u8
+- threefive
+- Jinja2
 - boto3
 - botocore
+- urllib3
 
 You can use `pip install -r requirements.txt` to install all required libraries at once.
 
