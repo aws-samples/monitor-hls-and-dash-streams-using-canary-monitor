@@ -1,0 +1,33 @@
+{
+  "x": {{positions[0]}},
+  "y": {{positions[1]}},
+  "height": {{dashboardconfig['metric']['height']}},
+  "width": {{dashboardconfig['metric']['width']}},
+  "type": "metric",
+  "properties": {
+    "metrics": [
+      {% set ns = namespace(count = 0) %}
+      {% for endpoint in renderinfo['endpoints'] %}
+        {% if ns.count > 0 %}, {% endif %}[ "CanaryMonitor", "SegmentsDuration", "Origin", "{{renderinfo['origin']}}", "Type", "{{renderinfo['type']}}", "Endpoint", "{{endpoint['endpoint']}}", "Technology", "{{endpoint['technology']}}", "Workload", "{{renderinfo['workload']}}", "AdBreakType", "regular" ], [ "CanaryMonitor", "SegmentsDuration", "Origin", "{{renderinfo['origin']}}", "Type", "{{renderinfo['type']}}", "Endpoint", "{{endpoint['endpoint']}}", "Technology", "{{endpoint['technology']}}", "Workload", "{{renderinfo['workload']}}", "AdBreakType", "overlay" ]{% set ns.count = ns.count + 1 %}
+      {% endfor %}
+    ],
+    "view": "timeSeries",
+    "stacked": false,
+    "region": "{{dashboardconfig['region']}}",
+    "stat": "Minimum",
+    "period": 60,
+    "title": "Ad Break Segments Duration [sec]",
+    "yAxis": {
+      "left": {
+        "showUnits": false
+      },
+      "right": {
+        "showUnits": false
+      }
+    },
+    "legend": {
+      "position": "bottom"
+    },
+    "liveData": true
+  }
+}

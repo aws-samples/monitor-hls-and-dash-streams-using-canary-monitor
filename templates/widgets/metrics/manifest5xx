@@ -1,0 +1,40 @@
+{
+  "x": {{positions[0]}},
+  "y": {{positions[1]}},
+  "height": {{dashboardconfig['metric']['height']}},
+  "width": {{dashboardconfig['metric']['width']}},
+  "type": "metric",
+  "properties": {
+    "metrics": [
+      {% set ns = namespace(count = 0) %}
+      {% for endpoint in renderinfo['endpoints'] %}
+        {% if ns.count > 0 %}, {% endif %}[ "CanaryMonitor", "Request", "Status", "5xx", "Origin", "{{renderinfo['origin']}}", "Type", "{{renderinfo['type']}}", "Endpoint", "{{endpoint['endpoint']}}", "Technology", "{{endpoint['technology']}}", "Rendition", "multi", "RequestType", "manifest", "Workload", "{{renderinfo['workload']}}" ]{% set ns.count = ns.count + 1 %}
+        {% if endpoint['technology'] == 'hls' %}
+          {% for rendition in endpoint['config']['renditions'] %}
+            {% if ns.count > 0 %}, {% endif %}[ "CanaryMonitor", "Request", "Status", "5xx", "Origin", "{{renderinfo['origin']}}", "Type", "{{renderinfo['type']}}", "Endpoint", "{{endpoint['endpoint']}}", "Technology", "{{endpoint['technology']}}", "Rendition", "{{rendition}}", "RequestType", "manifest", "Workload", "{{renderinfo['workload']}}" ]{% set ns.count = ns.count + 1 %}
+          {% endfor %}
+        {% endif %}
+      {% endfor %}
+    ],
+    "view": "timeSeries",
+    "stacked": true,
+    "region": "{{dashboardconfig['region']}}",
+    "stat": "Sum",
+    "period": 60,
+    "title": "Manifest 5xx",
+    "yAxis": {
+      "left": {
+        "showUnits": false,
+        "label": "",
+        "min": 0
+      },
+      "right": {
+        "showUnits": false
+      }
+    },
+    "legend": {
+      "position": "bottom"
+    },
+    "liveData": true
+  }
+}

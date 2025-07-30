@@ -1,0 +1,28 @@
+{% set positions = initpositions() %}
+
+{
+  "widgets": [
+    {% set positions = getpositions('header') %}{% include 'widgets/headers/metrics' %}
+    {% set positions = getpositions('metric') %},{% include 'widgets/metrics/bufferFillDuration' %}
+    {% set positions = getpositions('metric') %},{% include 'widgets/metrics/discontinuity' %}
+    {% set positions = getpositions('metric') %},{% include 'widgets/metrics/manifestLatency' %}
+    {% set positions = getpositions('metric') %},{% include 'widgets/metrics/manifest4xx' %}
+    {% set positions = getpositions('metric') %},{% include 'widgets/metrics/manifest5xx' %}
+    {% set positions = getpositions('metric') %},{% include 'widgets/metrics/manifestFailure' %}
+    {% set positions = getpositions('metric') %},{% include 'widgets/metrics/overlayAdBreak' %}
+    {% set positions = getpositions('metric') %},{% include 'widgets/metrics/regularAdBreak' %}
+    {% set positions = getpositions('metric') %},{% include 'widgets/metrics/adBreakSegmentsDuration' %}
+    {% if renderinfo['trackingrequests'] and renderinfo['origin'] != 'emt' %}
+      {% set positions = getpositions('metric') %},{% include 'widgets/metrics/adBreakAdvertisedDuration' %}
+      {% set positions = getpositions('metric') %},{% include 'widgets/metrics/adBreakDurationDelta' %}
+    {% endif %}
+    {% if renderinfo['trackingrequests'] and renderinfo['origin'] == 'emt' %}
+      {% set positions = getpositions('metric') %},{% include 'widgets/metrics/trackingLatency' %}
+      {% set positions = getpositions('metric') %},{% include 'widgets/metrics/tracking4xx' %}
+      {% set positions = getpositions('metric') %},{% include 'widgets/metrics/tracking5xx' %}
+      {% set positions = getpositions('metric') %},{% include 'widgets/metrics/trackingFailure' %}
+    {% endif %}
+    {% set positions = getpositions('header') %},{% include 'widgets/headers/logs' %}
+    {% set positions = getpositions('loginsights') %},{% include 'widgets/loginsights/monitor' %}
+  ]
+}

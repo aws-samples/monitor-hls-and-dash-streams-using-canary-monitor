@@ -1,0 +1,52 @@
+{
+  "version": 1,
+  "disable_existing_loggers": "False",
+  "formatters": {
+    "service": {
+      "format": "%(asctime)s.%(msecs)03d %(levelname).1s %(process)d %(message)s",
+      "datefmt": "%Y-%m-%dT%H:%M:%S"
+    },
+    "monitor": {
+      "format": "%(asctime)s.%(msecs)03d %(levelname).1s %(type)s %(origin)s %(workload)s %(endpoint)s %(technology)s %(rendition)s %(message)s",
+      "datefmt": "%Y-%m-%dT%H:%M:%S"
+    }
+  },
+  "handlers": {
+    "consolemonitor": {
+      "level": "DEBUG",
+      "class": "logging.StreamHandler",
+      "formatter": "monitor",
+      "stream": "ext://sys.stdout"
+    },
+    "consoleservice": {
+      "level": "DEBUG",
+      "class": "logging.StreamHandler",
+      "formatter": "service",
+      "stream": "ext://sys.stdout"
+    },
+    "filemonitor": {
+      "level": "DEBUG",
+      "class": "logging.FileHandler",
+      "formatter": "monitor",
+      "filename": "logs/monitor.log",
+      "mode": "a"
+    },
+    "fileservice": {
+      "level": "DEBUG",
+      "class": "logging.FileHandler",
+      "formatter": "service",
+      "filename": "logs/service.log",
+      "mode": "a"
+    }
+  },
+  "loggers": {
+    "service": {
+      "level": "DEBUG",
+      "handlers": ["fileservice"]
+    },
+    "monitor": {
+      "level": "DEBUG",
+      "handlers": ["filemonitor"]
+    }
+  }
+}

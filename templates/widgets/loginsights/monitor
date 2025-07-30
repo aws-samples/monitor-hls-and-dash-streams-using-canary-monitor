@@ -1,0 +1,13 @@
+{
+  "x": {{positions[0]}},
+  "y": {{positions[1]}},
+  "height": {{dashboardconfig['loginsights']['height']}},
+  "width": {{dashboardconfig['maxwidth']}},
+  "type": "log",
+  "properties": {
+    "query": "SOURCE 'CanaryMonitor/MonitorLogs' | parse @message '* * * * * * * * *' as time, sev, type, origin, workload, endpoint, tech, rend, logmessage\n| filter type == \"{{renderinfo['type']}}\" and origin == \"{{renderinfo['origin']}}\" and workload == \"{{renderinfo['workload']}}\"\n| display time, sev, tech, endpoint, rend, logmessage\n| sort time desc\n| limit 5000",
+    "region": "us-west-2",
+    "title": "Monitoring logs",
+    "view": "table"
+  }
+}

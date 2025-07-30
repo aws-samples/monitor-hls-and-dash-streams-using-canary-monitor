@@ -1,0 +1,11 @@
+{
+  "x": {{positions[0]}},
+  "y": {{positions[1]}},
+  "height": {{dashboardconfig['header']['height']}},
+  "width": {{dashboardconfig['maxwidth']}},
+  "type": "text",
+  "properties": {
+    "markdown": "## Logs",
+    "background": "solid"
+  }
+}
