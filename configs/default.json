@@ -1,0 +1,25 @@
+{
+  "cwmetrics": true,
+  "loglevel": "debug",
+  "manifests": {
+    "frequency": 5.0,
+    "save": {
+      "local": false
+    }
+  },
+  "tracking": {
+    "frequency": 6.0,
+    "playhead": false,
+    "get": true,
+    "save": {
+      "local": false
+    }
+  },
+  "hls": {
+    "renditions": [ "v1", "a1" ],
+    "emtadsegmentprefix": "asset"
+  },
+  "validations": {
+    "perform": true
+  }
+}
