@@ -102,8 +102,7 @@ def getsegmenttemplateinfo(logger, xmlperiod, monitorinfo):
     # Update manifest information
   except Exception as e:
     logger.error(f"Error getting segment template. Exception: {str(e)} Traceback: {traceback.format_exc()}")
-  finally:
-    return segmenttemplates, primarysegmenttemplate
+  return segmenttemplates, primarysegmenttemplate
 
 
 # Find out information about period
@@ -263,9 +262,22 @@ def gothroughnewsegments(logger, monitorinfo:dict):
     # Check if found last segment
     if not monitorinfo['manifest']['primary']['foundlastsegment']:
       logger.warning(f"Last segment not found")
-
+    # Update playhead
+    if 'availabilitystarttime' in monitorinfo['manifest'].keys():
+      monitorinfo['manifest']['playhead'] = round((datetime.now(timezone.utc) - monitorinfo['manifest']['availabilitystarttime']).total_seconds())
   except Exception as e:
     logger.error(f"Error going through new segments. Exception: {str(e)} Traceback: {traceback.format_exc()}")
+
+# Get availabtilityStartTime from manifest
+def getavailabilitystarttime(logger, xmlroot, monitorinfo:dict):
+  try:
+    xmlavailabilitystarttime = xmlroot.get('availabilityStartTime')
+    if xmlavailabilitystarttime:
+      monitorinfo['manifest']['availabilitystarttime'] = datetime.fromisoformat(xmlavailabilitystarttime)
+    else:
+      logger.warning(f"Missing availabilityStartTime in manifest")
+  except Exception as e:
+    logger.error(f"Error getting availabilityStartTime. Exception: {str(e)} Traceback: {traceback.format_exc()}")
 
 
 # Dash monitor
@@ -275,6 +287,7 @@ def monitor(logger, monitorinfo:dict, response:bytes):
   try:
     if xmlroot is not None:
       xmlperiods = xmlroot.findall('default:Period', ns)
+      getavailabilitystarttime(logger, xmlroot, monitorinfo)
       if not monitorinfo['manifest']['primary']['last']['segment']:
         # Go through all periods
         for xmlperiod in xmlperiods:

@@ -1,4 +1,4 @@
-import datetime
+from datetime import datetime, timezone
 import gzip
 import pathlib
 import traceback
@@ -109,7 +109,7 @@ def addmetric(logger, monitorinfo, metricname:str, metricvalue, metricunit:str, 
       'MetricName': metricname,
       'Value': metricvalue,
       'Dimensions': metricdimensions,
-      'Timestamp': datetime.datetime.utcnow()
+      'Timestamp': datetime.now(timezone.utc)
     }
     if metricunit:
       metricdata['Unit'] = metricunit
@@ -164,12 +164,21 @@ def wait(logger, starttime:float, duration:float):
 def tracking(logger, monitorinfo:dict, endpointconfig:dict):
   try:
     while not monitorinfo['state']['stop'].is_set():
+      ready = True
       starttime = time.perf_counter()
       if endpointconfig['tracking']['get']:
         logger.debug(f"Requesting tracking")
-        response = request(logger, 'GET', endpointconfig['trackingurl'], 'tracking', '', monitorinfo)
-        if endpointconfig['tracking']['save']['local']:
-          saveresponse(logger, response, monitorinfo, 'tracking', f"{datetime.datetime.utcnow().strftime('%Y_%m_%d_%H_%M_%S_%f')}", False)
+        trackingurl = endpointconfig['trackingurl']
+        if monitorinfo['config']['endpointconfig']['tracking']['playhead']:
+          if 'playhead' in monitorinfo['manifest'].keys():
+            trackingurl = f"{trackingurl}?aws.playheadPositionInSeconds={str(monitorinfo['manifest']['playhead'])}"
+          else:
+            ready = False
+            logger.debug(f"Waiting for playhead to be ready")
+        if ready:
+          response = request(logger, 'GET', trackingurl, 'tracking', '', monitorinfo)
+          if endpointconfig['tracking']['save']['local']:
+            saveresponse(logger, response, monitorinfo, 'tracking', f"{datetime.now(timezone.utc).strftime('%Y_%m_%d_%H_%M_%S_%f')}", False)
       wait(logger, starttime, endpointconfig['tracking']['frequency'])
   except Exception as e:
     logger.error(f"Encountered error in tracking thread. Exception: {str(e)} Traceback: {traceback.format_exc()}")

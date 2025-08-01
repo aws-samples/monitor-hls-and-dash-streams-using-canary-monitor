@@ -15,7 +15,7 @@ import pathlib
 import signal
 import hashlib
 import tempfile
-import datetime
+from datetime import datetime, timezone
 import random
 import platform
 import shutil
@@ -122,8 +122,7 @@ def getendpointsinfo():
         readcsvfile(str(csvfile), file.read(), endpoints)
   except Exception as e:
     mainlogger.error(f"Failed to get origin endpoints information. Exception: {e} Traceback: {traceback.format_exc()}")
-  finally:
-    return endpoints
+  return endpoints
 
 
 # Get file hash
@@ -172,7 +171,7 @@ def savereport(logger, monitorinfo, final:bool):
       })
     reportfilepath = pathlib.Path('archive', monitorinfo['config']['type'], monitorinfo['config']['workload'], monitorinfo['config']['origin'], monitorinfo['config']['endpoint'], monitorinfo['config']['technology'], 'reports', f"{monitorinfo['state']['startdatetime'].strftime('%Y_%m_%d_%H_%M_%S_%f')}.json")
     if final:
-      reportfilepathfinal = pathlib.Path('archive', monitorinfo['config']['type'], monitorinfo['config']['workload'], monitorinfo['config']['origin'], monitorinfo['config']['endpoint'], monitorinfo['config']['technology'], 'reports', f"{monitorinfo['state']['startdatetime'].strftime('%Y_%m_%d_%H_%M_%S_%f')}_to_{datetime.datetime.utcnow().strftime('%Y_%m_%d_%H_%M_%S_%f')}.json")
+      reportfilepathfinal = pathlib.Path('archive', monitorinfo['config']['type'], monitorinfo['config']['workload'], monitorinfo['config']['origin'], monitorinfo['config']['endpoint'], monitorinfo['config']['technology'], 'reports', f"{monitorinfo['state']['startdatetime'].strftime('%Y_%m_%d_%H_%M_%S_%f')}_to_{datetime.now(timezone.utc).strftime('%Y_%m_%d_%H_%M_%S_%f')}.json")
       if reportfilepath.exists():
         shutil.move(reportfilepath, reportfilepathfinal)
       reportfilepath = reportfilepathfinal
@@ -252,9 +251,8 @@ def getrenditions(logger, responsedata: str, monitorinfo: dict):
         logger.warning(f"Failed finding user selected rendition {renditionstring}")
   except Exception as e:
     logger.error(f"Error parsing manifest. Exception: {str(e)}")
-  finally:
-    logger.debug(f"Found these renditions: {renditions}")
-    return renditions
+  logger.debug(f"Found these renditions: {renditions}")
+  return renditions
 
 
 # HLS rendition monitor
@@ -318,7 +316,7 @@ def monitor(endpointidentifier:tuple, endpointconfig:dict, stopflag, changeflag,
     },
     'state': {
       'starttimeperf': time.perf_counter(),
-      'startdatetime': datetime.datetime.utcnow(),
+      'startdatetime': datetime.now(timezone.utc),
       'threads': {},
       'lock': threading.Lock(),
       'stop': threading.Event()
@@ -382,7 +380,7 @@ def monitor(endpointidentifier:tuple, endpointconfig:dict, stopflag, changeflag,
       response = utils.request(logger, 'GET', endpointconfig['manifesturl'], 'manifest', 'multi', monitorinfo)
       # Save manifest response
       if endpointconfig['manifests']['save']['local']:
-        utils.saveresponse(logger, response, monitorinfo, 'manifests', f"{datetime.datetime.utcnow().strftime('%Y_%m_%d_%H_%M_%S_%f')}", False)
+        utils.saveresponse(logger, response, monitorinfo, 'manifests', f"{datetime.now(timezone.utc).strftime('%Y_%m_%d_%H_%M_%S_%f')}", False)
       # Process manifest response if configured to validate manifests
       if endpointconfig['validations']['perform']:
         if monitorinfo['config']['type'] == 'live':
@@ -426,7 +424,7 @@ def monitor(endpointidentifier:tuple, endpointconfig:dict, stopflag, changeflag,
 
 # Find what endpoint configuration changes were made to know if worked needs to be restarted
 def needtorestartworker(old:dict, new:dict):
-  allowedpaths = {"root['cwmetrics']", "root['manifests']['frequency']", "root['manifests']['save']['local']", "root['tracking']['frequency']", "root['tracking']['get']", "root['tracking']['save']['local']", "root['loglevel']"}
+  allowedpaths = {"root['cwmetrics']", "root['manifests']['frequency']", "root['manifests']['save']['local']", "root['tracking']['frequency']", "root['tracking']['get']", "root['tracking']['save']['local']", "root['tracking']['playhead']", "root['loglevel']"}
   diff = DeepDiff(old, new)
   if 'values_changed' not in diff:
     return True
