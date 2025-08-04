@@ -304,8 +304,9 @@ def clearup(monitorinfo:dict):
 
 
 # Monitor endpoint
-def monitor(endpointidentifier:tuple, endpointconfig:dict, stopflag, changeflag, endpointinfofile, sharedwithmain, loggingconfig:dict):
+def monitor(endpointidentifier:tuple, endpointconfig:dict, stopflag, changeflag, endpointinfofile, sharedwithmain, loggingconfig:dict, args):
   monitorinfo = {
+    'args': args,
     'config': {
       'type': endpointidentifier[0],
       'technology': endpointidentifier[1],
@@ -398,7 +399,7 @@ def monitor(endpointidentifier:tuple, endpointconfig:dict, stopflag, changeflag,
           if requesttime - monitorinfo['state']['starttimeperf'] > max(monitorinfo['manifest']['primary']['buffer']['size'], monitorinfo['config']['endpointconfig']['manifests']['frequency']):
             utils.checkforstaleness(logger, monitorinfo, requesttime)
       # Publish metrics to CW
-      if endpointconfig['cwmetrics']:
+      if endpointconfig['cwmetrics'] and not monitorinfo['args'].no_aws:
         if time.perf_counter() - monitorinfo['metrics']['lastpublishtime'] > monitorinfo['metrics']['publishinterval']:
           publishmetrics(logger, monitorinfo)
           monitorinfo['metrics']['lastpublishtime'] = time.perf_counter()
@@ -480,11 +481,11 @@ def startmonitorworker(identifier:tuple, endpointconfig:dict):
   if args.threads:
     mainconfig['stopflags'][identifier] = threading.Event()
     mainconfig['changeflags'][identifier] = threading.Event()
-    mainconfig['workers'][identifier] = threading.Thread(target=monitor, args=(identifier, endpointconfig, mainconfig['stopflags'][identifier], mainconfig['changeflags'][identifier], endpointinfofile.name, sharedwithmain, loggingconfig))
+    mainconfig['workers'][identifier] = threading.Thread(target=monitor, args=(identifier, endpointconfig, mainconfig['stopflags'][identifier], mainconfig['changeflags'][identifier], endpointinfofile.name, sharedwithmain, loggingconfig, args))
   else:
     mainconfig['stopflags'][identifier] = multiprocessing.Event()
     mainconfig['changeflags'][identifier] = multiprocessing.Event()
-    mainconfig['workers'][identifier] = multiprocessing.Process(target=monitor, args=(identifier, endpointconfig, mainconfig['stopflags'][identifier], mainconfig['changeflags'][identifier], endpointinfofile.name, sharedwithmain, loggingconfig))
+    mainconfig['workers'][identifier] = multiprocessing.Process(target=monitor, args=(identifier, endpointconfig, mainconfig['stopflags'][identifier], mainconfig['changeflags'][identifier], endpointinfofile.name, sharedwithmain, loggingconfig, args))
   mainconfig['workers'][identifier].start()
   # Wait 50 milliseconds to avoid spike in new processes
   time.sleep(0.05)
@@ -507,13 +508,12 @@ def renderandsavedashboard(renderinfo:dict):
       renderjson = json.loads(render)
       # Save dashboard to CloudWatch if it is a valid JSON
       try:
-        if not args.no_auto_dashboards:
-          dashboardname = f"{renderinfo['workload'].upper()}-{renderinfo['origin'].upper() if renderinfo['origin'] in ['emp', 'emt'] else renderinfo['origin'].capitalize()}-Canary-Monitor"
-          response = cloudwatch.put_dashboard(DashboardName=dashboardname, DashboardBody=render)
-          if response:
-            mainlogger.info(f"Saved dashboard '{dashboardname}' to CloudWatch")
-            if 'DashboardValidationMessages' in response.keys() and len(response['DashboardValidationMessages']) > 0:
-              mainlogger.warning(f"Dashboard validation warnings: {response['DashboardValidationMessages']}")
+        dashboardname = f"{renderinfo['workload'].upper()}-{renderinfo['origin'].upper() if renderinfo['origin'] in ['emp', 'emt'] else renderinfo['origin'].capitalize()}-Canary-Monitor"
+        response = cloudwatch.put_dashboard(DashboardName=dashboardname, DashboardBody=render)
+        if response:
+          mainlogger.info(f"Saved dashboard '{dashboardname}' to CloudWatch")
+          if 'DashboardValidationMessages' in response.keys() and len(response['DashboardValidationMessages']) > 0:
+            mainlogger.warning(f"Dashboard validation warnings: {response['DashboardValidationMessages']}")
       except Exception as e:
         mainlogger.error(f"Faled to save dashboard to CloudWatch. Exception: {e} Traceback: {traceback.format_exc()}")
         raise
@@ -585,15 +585,11 @@ if __name__ == '__main__':
   # Read arguments
   parser = argparse.ArgumentParser()
   parser.add_argument('-t', '--threads', action='store_true', help='use threads instead of processes')
-  parser.add_argument('-r', '--region', type=str, default='us-west-2', help='AWS region to use for publishing CloudWatch metrics, default: us-west-2')
-  parser.add_argument('-nad', '--no-auto-dashboards', action='store_true', help='do not create CloudWatch dashboards automatically')
+  parser.add_argument('-na', '--no-aws', action='store_true', help='do not use AWS')
+  parser.add_argument('-r', '--region', type=str, default='us-west-2', help='AWS region to use, default: us-west-2')
   args = parser.parse_args()
 
-  # Enable threading if platform is Windows
-  if platform.system() == 'Windows':
-    args.threads = True
-
-  # Configure logging
+    # Configure logging
   locallogsfolderpath = pathlib.Path('logs')
   locallogsfolderpath.mkdir(exist_ok=True)
   loggingconfigpath = pathlib.Path(os.path.dirname(os.path.realpath(__file__)), 'loggingconfig.json')
@@ -602,6 +598,11 @@ if __name__ == '__main__':
   logging.config.dictConfig(loggingconfig)
   mainlogger = logging.getLogger('service')
   mainlogger.info(f"Started")
+
+  # Enable threading if platform is Windows
+  if platform.system() == 'Windows':
+    mainlogger.info(f"Will use threads because system is Windows")
+    args.threads = True
 
   # Import external libraries
   try:
@@ -614,30 +615,28 @@ if __name__ == '__main__':
     sys.exit(1)
 
   # Configure AWS resources
-  try:
-    import boto3
-    from botocore.config import Config
-    from botocore.exceptions import BotoCoreError, ClientError
-    config = Config(
-      region_name=args.region,
-      read_timeout=3,
-      connect_timeout=3,
-      retries={
-        'max_attempts': 1
-      }
-    )
+  if not args.no_aws:
     try:
-      # Cloudwatch
-      cloudwatch = boto3.client('cloudwatch', config=config)
-      mainlogger.info(f"Configured CloudWatch client in {args.region}")
+      import boto3
+      from botocore.config import Config
+      from botocore.exceptions import BotoCoreError, ClientError
+      config = Config(
+        region_name=args.region,
+        read_timeout=3,
+        connect_timeout=3,
+        retries={
+          'max_attempts': 1
+        }
+      )
       # Get account id
       awsaccountid = boto3.client('sts').get_caller_identity().get('Account')
-    except (BotoCoreError, ClientError) as e:
-      mainlogger.error(f"Error initializing client. Exception: {traceback.format_exc()}")
-      sys.exit(1)
-  except Exception as e:
-    mainlogger.error(f"Exception: {e} Trackeback: {traceback.format_exc()}")
-    sys.exit(1)
+      # CloudWatch
+      cloudwatch = boto3.client('cloudwatch', config=config)
+      mainlogger.info(f"Configured CloudWatch client in {args.region}")
+    except Exception as e:
+      mainlogger.error(f"Error initializing AWS resources. Exception: {e} Trackeback: {traceback.format_exc()}")
+      args.no_aws = True
+
 
   # Prepare local storage
   localinputsfolderpath = pathlib.Path('origins')
@@ -717,7 +716,7 @@ if __name__ == '__main__':
         for item in inputorconfigchanges:
           mainlogger.info(f"Input or config has changed, {item['change']}: {item['filename']}")
         mainconfig['endpoints'] = updateworkers()
-        if len(mainconfig['changedworkloads']) > 0:
+        if len(mainconfig['changedworkloads']) > 0 and not args.no_aws:
           createdashboards()
         mainconfig['changedworkloads'].clear()
       time.sleep(5)
@@ -727,9 +726,9 @@ if __name__ == '__main__':
     mainlogger.error(f"Error. Exception: {e} Traceback: {traceback.format_exc()}")
   finally:
     for flag in mainconfig['stopflags'].values():
-      flag.set()
+      flag.set() # noqa
     for worker in mainconfig['workers'].values():
-      worker.join()
+      worker.join() # noqa
 
 
 

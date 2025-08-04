@@ -104,7 +104,7 @@ def request(logger, method:str, url:str, requesttype:str, rendition:str, monitor
 
 # Add metric to queue
 def addmetric(logger, monitorinfo, metricname:str, metricvalue, metricunit:str, metricdimensions:list):
-  if monitorinfo['config']['endpointconfig']['cwmetrics']:
+  if monitorinfo['config']['endpointconfig']['cwmetrics'] and not monitorinfo['args'].no_aws:
     metricdata = {
       'MetricName': metricname,
       'Value': metricvalue,

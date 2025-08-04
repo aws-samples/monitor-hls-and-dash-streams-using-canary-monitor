@@ -42,9 +42,11 @@ The canary monitor picks changes in the input CSV files and in the monitoring co
 
 ## CloudWatch Metrics and Dashboards
 
+To prevent the canary monitor from using AWS resources, use `-na` or `--no-aws` argument at start.
+
 The tool sends metrics to CloudWatch for an endpoint if the endpoint is configured with `"cwmetrics": true` setting in the config file. If a user runs the script on an Amazon EC2 instance, they should have an IAM role with `cloudwatch:PutMetricData` permission assigned to the EC2 instance. Otherwise, they should have an IAM user with `cloudwatch:PutMetricData` permission configured with `aws configure` command on the machine where they run the script. User can control the AWS region for publishing metrics by `-r` or `--region` argument at start.
 
-The canary monitor automatically creates or updates CloudWatch dashboards anytime a change is detected in the list of monitored endpoints. The tool groups the monitored endpoints by workload and origin name when creating the dasbhoards, meaning endpoints with the same workload and origin name are part of the same dashboard. Automatic creation of dashboards can be disabled with `-nad` or `--no-auto-dashboards` argument at start. Dashboards include only relevant metrics based on the values in the monitoring config file.
+The canary monitor automatically creates or updates CloudWatch dashboards anytime a change is detected in the list of monitored endpoints. The tool groups the monitored endpoints by workload and origin name when creating the dasbhoards, meaning endpoints with the same workload and origin name are part of the same dashboard. Dashboards include only relevant metrics based on the values in the monitoring config file.
 
 ### CloudWatch Metrics
 
@@ -130,10 +132,9 @@ usage: canarymonitor.py [-h] [-t] [-r REGION] [-nad]
 options:
   -h, --help            show this help message and exit
   -t, --threads         use threads instead of processes
+  -na, --no-aws         do not use AWS
   -r REGION, --region REGION
-                        AWS region to use for publishing CloudWatch metrics, default: us-west-2
-  -nad, --no-auto-dashboards
-                        do not create CloudWatch dashboards automatically
+                        AWS region to use, default: us-west-2
 ```
 
 Users should use `ctrl+c` or `kill -2 PID` to stop the canary monitor where PID is the process number as logged on each line in the `logs/service.log` log file.
