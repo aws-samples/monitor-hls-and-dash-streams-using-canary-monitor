@@ -75,7 +75,7 @@ def decodesctestring(logger, scte:str):
 # Send HTTP request
 def request(logger, method:str, url:str, requesttype:str, rendition:str, monitorinfo):
   response = None
-  headers = {'User-Agent': 'CanaryMonitor (v24.11.a)'}
+  headers = {'User-Agent': 'CanaryMonitor (v2.0)'}
   if requesttype in ['manifest', 'tracking']:
     headers.update({'Accept-Encoding': 'gzip'})
   dimensions = [{'Name': 'RequestType', 'Value': requesttype}]
@@ -87,7 +87,7 @@ def request(logger, method:str, url:str, requesttype:str, rendition:str, monitor
     if response.status >= 300:
       raise HTTPNon200Error()
   except HTTPNon200Error:
-    responsedata = response.data.decode('utf-8').replace('\n', '')
+    responsedata = decoderesponse(response, True).replace('\n', '')
     logger.error(f"HTTP response {response.status} ({response.reason}), url: {url}, response headers: {dict(response.headers.items())}, response data: {responsedata}")
     addmetric(logger, monitorinfo, 'Request', 1, 'Count', dimensions + [{'Name': 'Status', 'Value': f"{response.status // 100}xx"}])
     return None
@@ -114,6 +114,23 @@ def addmetric(logger, monitorinfo, metricname:str, metricvalue, metricunit:str, 
     if metricunit:
       metricdata['Unit'] = metricunit
     monitorinfo['metrics']['queue'].put(metricdata)
+
+# Decode HTTP response
+def decoderesponse(response, utf:bool):
+  isgzip = False
+  if 'Content-Encoding' in response.headers:
+    if response.headers['Content-Encoding'] == 'gzip':
+      isgzip = True
+  if isgzip:
+    if utf:
+      return gzip.decompress(response.data).decode('utf-8')
+    else:
+      return gzip.decompress(response.data)
+  else:
+    if utf:
+      return response.data.decode('utf-8')
+    else:
+      return response.data
 
 
 # Save response to disk or to S3

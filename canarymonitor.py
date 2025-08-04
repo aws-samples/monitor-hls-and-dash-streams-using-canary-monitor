@@ -183,24 +183,6 @@ def savereport(logger, monitorinfo, final:bool):
     logger.error(f"Error updating worker endpoint configuration. Exception: {str(e)} Traceback: {traceback.format_exc()}")
 
 
-# Decode HTTP response
-def decoderesponse(response, utf:bool):
-  isgzip = False
-  if 'Content-Encoding' in response.headers:
-    if response.headers['Content-Encoding'] == 'gzip':
-      isgzip = True
-  if isgzip:
-    if utf:
-      return gzip.decompress(response.data).decode('utf-8')
-    else:
-      return gzip.decompress(response.data)
-  else:
-    if utf:
-      return response.data.decode('utf-8')
-    else:
-      return response.data
-
-
 # Publish metrics to CW
 def publishmetrics(logger, monitorinfo):
   try:
@@ -392,7 +374,7 @@ def monitor(endpointidentifier:tuple, endpointconfig:dict, stopflag, changeflag,
             elif monitorinfo['config']['technology'] == 'dash':
               manifestlastupdated = getmanifestlastupdated(response)
               if manifestlastupdated != monitorinfo['manifest']['primary']['headers']['manifestlastupdated'] or manifestlastupdated == 0:
-                dash.monitor(logger, monitorinfo, decoderesponse(response, False))
+                dash.monitor(logger, monitorinfo, utils.decoderesponse(response, False))
               monitorinfo['manifest']['primary']['headers']['manifestlastupdated'] = manifestlastupdated
           # Check for staleness
           monitorinfo['manifest']['primary']['buffer']['window'][requesttime] = monitorinfo['manifest']['primary']['new']['duration']
@@ -589,7 +571,7 @@ if __name__ == '__main__':
   parser.add_argument('-r', '--region', type=str, default='us-west-2', help='AWS region to use, default: us-west-2')
   args = parser.parse_args()
 
-    # Configure logging
+  # Configure logging
   locallogsfolderpath = pathlib.Path('logs')
   locallogsfolderpath.mkdir(exist_ok=True)
   loggingconfigpath = pathlib.Path(os.path.dirname(os.path.realpath(__file__)), 'loggingconfig.json')
