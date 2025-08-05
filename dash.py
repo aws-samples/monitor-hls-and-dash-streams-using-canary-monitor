@@ -174,40 +174,46 @@ def getperiodinfo(logger, xmlperiod, monitorinfo:dict):
       # Identify ad break type
       adbreakinfo = {
         'observed': observetime,
-        'advertisedduration': 0.0,
         'segmentsduration': 0.0
       }
       if monitorinfo['config']['origin'].lower() == 'emt':
         if '_' in xmlperiodid:
           adbreakinfo['type'] = 'regular'
         else:
+          keepgoing = True
           for sctemessage in periodinfo['spliceinfo']:
             if 'descriptors' in sctemessage.keys():
               for descriptor in sctemessage['descriptors']:
-                if 'segmentationtype' in descriptor.keys():
-                  if descriptor['segmentationtype'] == 56:
-                    adbreakinfo['type'] = 'overlay'
-                    break
+                if keepgoing:
+                  if 'segmentationtype' in descriptor.keys():
+                    if descriptor['segmentationtype'] == 56:
+                      keepgoing = False
+                      if 'availnum' in sctemessage.keys():
+                        adbreakinfo['availnum'] = sctemessage['availnum']
+                      adbreakinfo['advertisedduration'] = descriptor['duration'] if 'duration' in descriptor.keys() else 0.0
+                      adbreakinfo['type'] = 'overlay'
       else:
         keepgoing = True
         for sctemessage in periodinfo['spliceinfo']:
-          if 'descriptors' in sctemessage.keys() and keepgoing:
+          if 'descriptors' in sctemessage.keys():
             for descriptor in sctemessage['descriptors']:
-              if 'segmentationtype' in descriptor.keys() and keepgoing:
-                if 'duration' in descriptor.keys():
-                  adbreakinfo['advertisedduration'] = descriptor['duration']
-                if descriptor['segmentationtype'] in [34, 48, 50, 52, 54]:
-                  adbreakinfo['type'] = 'regular'
-                  keepgoing = False
-                if descriptor['segmentationtype'] == 56:
-                  adbreakinfo['type'] = 'overlay'
-                  keepgoing = False
+              if keepgoing:
+                if 'segmentationtype' in descriptor.keys():
+                  if descriptor['segmentationtype'] in [34, 48, 50, 52, 54, 56]:
+                    keepgoing = False
+                    if 'availnum' in sctemessage.keys():
+                      adbreakinfo['availnum'] = sctemessage['availnum']
+                    adbreakinfo['advertisedduration'] = descriptor['duration'] if 'duration' in descriptor.keys() else 0.0
+                    adbreakinfo['type'] = 'overlay' if descriptor['segmentationtype'] == 56 else 'regular'
           else:
-            if 'outofnetwork' in sctemessage.keys():
-              if sctemessage['outofnetwork']:
-                if 'duration' in sctemessage.keys():
-                  adbreakinfo['advertisedduration'] = sctemessage['duration']
-                adbreakinfo['type'] = 'regular'
+            if keepgoing:
+              if 'outofnetwork' in sctemessage.keys():
+                if sctemessage['outofnetwork']:
+                  keepgoing = False
+                  if 'availnum' in sctemessage.keys():
+                      adbreakinfo['availnum'] = sctemessage['availnum']
+                  adbreakinfo['advertisedduration'] = sctemessage['duration'] if 'duration' in sctemessage.keys() else 0.0
+                  adbreakinfo['type'] = 'regular'
       # Update manifest ad break information, send metric for ad break start and type
       if 'type' in adbreakinfo.keys():
         periodinfo['isadbreak'] = True
@@ -216,7 +222,10 @@ def getperiodinfo(logger, xmlperiod, monitorinfo:dict):
           monitorinfo['manifest']['primary']['adbreaks'][adbreakid] = adbreakinfo
           if monitorinfo['manifest']['primary']['foundlastsegment']:
             utils.addmetric(logger, monitorinfo, 'Start', 1, 'Count', [{'Name': 'AdBreakType', 'Value': adbreakinfo['type']}])
-            utils.addmetric(logger, monitorinfo, 'AdvertisedDuration', adbreakinfo['advertisedduration'], 'Seconds', [{'Name': 'AdBreakType', 'Value': adbreakinfo['type']}])
+            if 'advertisedduration' in adbreakinfo.keys():
+              utils.addmetric(logger, monitorinfo, 'AdvertisedDuration', adbreakinfo['advertisedduration'], 'Seconds', [{'Name': 'AdBreakType', 'Value': adbreakinfo['type']}])
+            if 'availnum' in adbreakinfo.keys():
+              utils.addmetric(logger, monitorinfo, 'AvailNum', adbreakinfo['availnum'], 'Count', [{'Name': 'AdBreakType', 'Value': adbreakinfo['type']}])
       # Update manifest period information
       monitorinfo['manifest']['primary']['periods'][xmlperiodid] = periodinfo
       logger.debug(f"Found {'new ' if monitorinfo['manifest']['primary']['foundlastsegment'] else ''}period {xmlperiodid}: compact={periodinfo['compact']}, adbreak={periodinfo['isadbreak']}{', type=' + adbreakinfo['type'] if 'type' in adbreakinfo.keys() else ''}{', spliceinfo=' + str(periodinfo['spliceinfo']) if len(periodinfo['spliceinfo']) > 0 else ''}")
@@ -249,7 +258,7 @@ def gothroughnewsegments(logger, monitorinfo:dict):
           if closeadbreak:
             monitorinfo['manifest']['primary']['adbreaks'][adbreakid]['segmentsduration'] = round(monitorinfo['manifest']['primary']['adbreaks'][adbreakid]['segmentsduration'], 3)
             utils.addmetric(logger, monitorinfo, 'SegmentsDuration', monitorinfo['manifest']['primary']['adbreaks'][adbreakid]['segmentsduration'], 'Seconds', [{'Name': 'AdBreakType', 'Value': monitorinfo['manifest']['primary']['adbreaks'][adbreakid]['type']}])
-            if monitorinfo['manifest']['primary']['adbreaks'][adbreakid]['advertisedduration'] > 0:
+            if 'advertisedduration' in monitorinfo['manifest']['primary']['adbreaks'][adbreakid].keys() and monitorinfo['manifest']['primary']['adbreaks'][adbreakid]['advertisedduration'] > 0:
               monitorinfo['manifest']['primary']['adbreaks'][adbreakid]['durationdelta'] = round(monitorinfo['manifest']['primary']['adbreaks'][adbreakid]['segmentsduration'] - monitorinfo['manifest']['primary']['adbreaks'][adbreakid]['advertisedduration'], 3)
               utils.addmetric(logger, monitorinfo, 'DurationDelta', abs(monitorinfo['manifest']['primary']['adbreaks'][adbreakid]['durationdelta']), 'Seconds', [{'Name': 'AdBreakType', 'Value': monitorinfo['manifest']['primary']['adbreaks'][adbreakid]['type']}])
               if abs(monitorinfo['manifest']['primary']['adbreaks'][adbreakid]['durationdelta']) > 0.1:

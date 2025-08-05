@@ -11,11 +11,10 @@
     {% set positions = getpositions('metric') %},{% include 'widgets/metrics/manifestFailure' %}
     {% set positions = getpositions('metric') %},{% include 'widgets/metrics/overlayAdBreak' %}
     {% set positions = getpositions('metric') %},{% include 'widgets/metrics/regularAdBreak' %}
+    {% set positions = getpositions('metric') %},{% include 'widgets/metrics/adBreakAdvertisedDuration' %}
     {% set positions = getpositions('metric') %},{% include 'widgets/metrics/adBreakSegmentsDuration' %}
-    {% if renderinfo['trackingrequests'] and renderinfo['origin'] != 'emt' %}
-      {% set positions = getpositions('metric') %},{% include 'widgets/metrics/adBreakAdvertisedDuration' %}
-      {% set positions = getpositions('metric') %},{% include 'widgets/metrics/adBreakDurationDelta' %}
-    {% endif %}
+    {% set positions = getpositions('metric') %},{% include 'widgets/metrics/adBreakDurationDelta' %}
+    {% set positions = getpositions('metric') %},{% include 'widgets/metrics/adAvailNum' %}
     {% if renderinfo['trackingrequests'] and renderinfo['origin'] == 'emt' %}
       {% set positions = getpositions('metric') %},{% include 'widgets/metrics/trackingLatency' %}
       {% set positions = getpositions('metric') %},{% include 'widgets/metrics/tracking4xx' %}
