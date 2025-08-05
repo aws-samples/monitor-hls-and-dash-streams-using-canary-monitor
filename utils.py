@@ -181,6 +181,7 @@ def wait(logger, starttime:float, duration:float):
 def tracking(logger, monitorinfo:dict, endpointconfig:dict):
   try:
     while not monitorinfo['state']['stop'].is_set():
+      playhead = None
       ready = True
       starttime = time.perf_counter()
       if endpointconfig['tracking']['get']:
@@ -188,14 +189,16 @@ def tracking(logger, monitorinfo:dict, endpointconfig:dict):
         trackingurl = endpointconfig['trackingurl']
         if monitorinfo['config']['endpointconfig']['tracking']['playhead']:
           if 'playhead' in monitorinfo['manifest'].keys():
-            trackingurl = f"{trackingurl}?aws.playheadPositionInSeconds={str(monitorinfo['manifest']['playhead'])}"
+            playhead = str(monitorinfo['manifest']['playhead'])
+            trackingurl = f"{trackingurl}?aws.playheadPositionInSeconds={playhead}"
           else:
             ready = False
             logger.debug(f"Waiting for playhead to be ready")
         if ready:
           response = request(logger, 'GET', trackingurl, 'tracking', '', monitorinfo)
           if endpointconfig['tracking']['save']['local']:
-            saveresponse(logger, response, monitorinfo, 'tracking', f"{datetime.now(timezone.utc).strftime('%Y_%m_%d_%H_%M_%S_%f')}", False)
+            filenameprefix = f"{datetime.now(timezone.utc).strftime('%Y_%m_%d_%H_%M_%S_%f')}_playhead_{playhead}" if playhead is not None else f"{datetime.now(timezone.utc).strftime('%Y_%m_%d_%H_%M_%S_%f')}"
+            saveresponse(logger, response, monitorinfo, 'tracking', filenameprefix, False)
       wait(logger, starttime, endpointconfig['tracking']['frequency'])
   except Exception as e:
     logger.error(f"Encountered error in tracking thread. Exception: {str(e)} Traceback: {traceback.format_exc()}")

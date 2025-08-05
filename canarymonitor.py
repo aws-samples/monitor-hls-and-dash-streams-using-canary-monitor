@@ -345,8 +345,7 @@ def monitor(endpointidentifier:tuple, endpointconfig:dict, stopflag, changeflag,
   # Start tracking
   try:
     if 'trackingurl' in endpointconfig.keys():
-      trackinglogger = logging.LoggerAdapter(monitorlogger, {'type': monitorinfo['config']['type'], 'origin': monitorinfo['config']['origin'], 'workload': monitorinfo['config']['workload'], 'endpoint': monitorinfo['config']['endpoint'], 'technology': monitorinfo['config']['technology'], 'rendition': 'tracking'})
-      monitorinfo['state']['threads']['tracking'] = threading.Thread(target=utils.tracking, args=(trackinglogger, monitorinfo, endpointconfig))
+      monitorinfo['state']['threads']['tracking'] = threading.Thread(target=utils.tracking, args=(logger, monitorinfo, endpointconfig))
       monitorinfo['state']['threads']['tracking'].start()
   except Exception as e:
     logger.error(f"Failed to start tracking. Exception: {str(e)} Traceback: {traceback.format_exc()}")
