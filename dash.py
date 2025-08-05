@@ -239,17 +239,21 @@ def gothroughsegments(logger, monitorinfo:dict):
 def gothroughnewsegments(logger, monitorinfo:dict):
   try:
     for period, segments in monitorinfo['manifest']['primary']['new']['segments'].items():
+      # Close last ad break
       if period != monitorinfo['manifest']['primary']['last']['period']:
-        # Update information about last ad break
         adbreakid = monitorinfo['manifest']['primary']['last']['period'].split('_')[0]
         if adbreakid in monitorinfo['manifest']['primary']['adbreaks'].keys():
-          monitorinfo['manifest']['primary']['adbreaks'][adbreakid]['segmentsduration'] = round(monitorinfo['manifest']['primary']['adbreaks'][adbreakid]['segmentsduration'], 3)
-          utils.addmetric(logger, monitorinfo, 'SegmentsDuration', monitorinfo['manifest']['primary']['adbreaks'][adbreakid]['segmentsduration'], 'Seconds', [{'Name': 'AdBreakType', 'Value': monitorinfo['manifest']['primary']['adbreaks'][adbreakid]['type']}])
-          if monitorinfo['manifest']['primary']['adbreaks'][adbreakid]['advertisedduration'] > 0:
-            monitorinfo['manifest']['primary']['adbreaks'][adbreakid]['durationdelta'] = round(monitorinfo['manifest']['primary']['adbreaks'][adbreakid]['segmentsduration'] - monitorinfo['manifest']['primary']['adbreaks'][adbreakid]['advertisedduration'], 3)
-            utils.addmetric(logger, monitorinfo, 'DurationDelta', abs(monitorinfo['manifest']['primary']['adbreaks'][adbreakid]['durationdelta']), 'Seconds', [{'Name': 'AdBreakType', 'Value': monitorinfo['manifest']['primary']['adbreaks'][adbreakid]['type']}])
-            if abs(monitorinfo['manifest']['primary']['adbreaks'][adbreakid]['durationdelta']) > 0.1:
-              logger.warning(f"Ad break duration was {'longer' if monitorinfo['manifest']['primary']['adbreaks'][adbreakid]['durationdelta'] > 0 else 'shorter'} than advertised by {abs(monitorinfo['manifest']['primary']['adbreaks'][adbreakid]['durationdelta'])} seconds")
+          closeadbreak = True
+          if monitorinfo['config']['origin'] == 'emt' and monitorinfo['manifest']['primary']['adbreaks'][adbreakid]['type'] == 'regular' and '_' in period:
+            closeadbreak = False
+          if closeadbreak:
+            monitorinfo['manifest']['primary']['adbreaks'][adbreakid]['segmentsduration'] = round(monitorinfo['manifest']['primary']['adbreaks'][adbreakid]['segmentsduration'], 3)
+            utils.addmetric(logger, monitorinfo, 'SegmentsDuration', monitorinfo['manifest']['primary']['adbreaks'][adbreakid]['segmentsduration'], 'Seconds', [{'Name': 'AdBreakType', 'Value': monitorinfo['manifest']['primary']['adbreaks'][adbreakid]['type']}])
+            if monitorinfo['manifest']['primary']['adbreaks'][adbreakid]['advertisedduration'] > 0:
+              monitorinfo['manifest']['primary']['adbreaks'][adbreakid]['durationdelta'] = round(monitorinfo['manifest']['primary']['adbreaks'][adbreakid]['segmentsduration'] - monitorinfo['manifest']['primary']['adbreaks'][adbreakid]['advertisedduration'], 3)
+              utils.addmetric(logger, monitorinfo, 'DurationDelta', abs(monitorinfo['manifest']['primary']['adbreaks'][adbreakid]['durationdelta']), 'Seconds', [{'Name': 'AdBreakType', 'Value': monitorinfo['manifest']['primary']['adbreaks'][adbreakid]['type']}])
+              if abs(monitorinfo['manifest']['primary']['adbreaks'][adbreakid]['durationdelta']) > 0.1:
+                logger.warning(f"Ad break duration was {'longer' if monitorinfo['manifest']['primary']['adbreaks'][adbreakid]['durationdelta'] > 0 else 'shorter'} than advertised by {abs(monitorinfo['manifest']['primary']['adbreaks'][adbreakid]['durationdelta'])} seconds")
       for segment in segments:
         monitorinfo['manifest']['primary']['new']['duration'] = monitorinfo['manifest']['primary']['new']['duration'] + segment['dsec']
         # Check for discontinuity

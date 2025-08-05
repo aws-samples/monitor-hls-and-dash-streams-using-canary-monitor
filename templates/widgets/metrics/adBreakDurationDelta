@@ -19,7 +19,9 @@
     "title": "Ad Break Duration Delta [sec]",
     "yAxis": {
       "left": {
-        "showUnits": false
+        "showUnits": false,
+        "label": "",
+        "min": 0
       },
       "right": {
         "showUnits": false

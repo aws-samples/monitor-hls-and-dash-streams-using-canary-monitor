@@ -10,7 +10,6 @@ import re
 import sys
 import json
 import os
-import gzip
 import pathlib
 import signal
 import hashlib
