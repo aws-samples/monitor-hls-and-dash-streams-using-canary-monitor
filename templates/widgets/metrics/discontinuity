@@ -12,7 +12,7 @@
       {% endfor %}
     ],
     "view": "timeSeries",
-    "stacked": true,
+    "stacked": false,
     "region": "{{dashboardconfig['region']}}",
     "stat": "Sum",
     "period": 60,
