@@ -1,4 +1,5 @@
-/origins/*
-/configs/*
-/archive/*
-/loggingconfig.json
+origins/*
+archive/*
+configs/*
+!configs/default.json
+loggingconfig.json

@@ -5,9 +5,9 @@
   "width": {{dashboardconfig['maxwidth']}},
   "type": "log",
   "properties": {
-    "query": "SOURCE 'CanaryMonitor/MonitorLogs' | parse @message '* * * * * * * * *' as time, sev, type, origin, workload, endpoint, tech, rend, logmessage\n| filter type == \"{{renderinfo['type']}}\" and origin == \"{{renderinfo['origin']}}\" and workload == \"{{renderinfo['workload']}}\"\n| display time, sev, tech, endpoint, rend, logmessage\n| sort time desc\n| limit 5000",
+    "query": "SOURCE 'CanaryMonitor/MonitorLogs' | parse @message '* * * * * * * * *' as time, sev, type, origin, workload, endpoint, tech, rend, logmessage\n| filter type == \"{{renderinfo['type']}}\" and origin == \"{{renderinfo['origin']}}\" and workload == \"{{renderinfo['workload']}}\"\n and sev like /W|E|C/ | display time, sev, tech, endpoint, rend, logmessage\n| sort time desc\n| limit 5000",
     "region": "us-west-2",
-    "title": "Monitoring logs",
+    "title": "Monitoring logs (warnings)",
     "view": "table"
   }
 }
