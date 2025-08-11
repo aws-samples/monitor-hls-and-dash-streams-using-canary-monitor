@@ -12,10 +12,6 @@ def getsegmentinfo(logger, monitorinfo:dict, primarysegmenttemplate, xmlperiod, 
   ns = {'default': 'urn:mpeg:dash:schema:mpd:2011', 'scte': 'urn:scte:scte35:2013:xml'}
   try:
     periodid = xmlperiod.get('id')
-    adbreakid = periodid.split('_')[0]
-    updateadbreakinfo = False
-    if adbreakid in monitorinfo['manifest']['primary']['adbreaks'].keys():
-      updateadbreakinfo = True
     compt = 0
     n = int(primarysegmenttemplate['xmlsegmenttemplate'].get('startNumber'))
     timescale = int(primarysegmenttemplate['xmlsegmenttemplate'].get('timescale'))
@@ -41,9 +37,6 @@ def getsegmentinfo(logger, monitorinfo:dict, primarysegmenttemplate, xmlperiod, 
             monitorinfo['manifest']['primary']['new']['segments'].setdefault(periodid, []).append(segment)
             if monitorinfo['manifest']['primary']['foundlastsegment']:
               logger.debug(f"Found new segment in period {periodid}: {segment}")
-            # Update ad break duration
-            if updateadbreakinfo:
-              monitorinfo['manifest']['primary']['adbreaks'][adbreakid]['segmentsduration'] = monitorinfo['manifest']['primary']['adbreaks'][adbreakid]['segmentsduration'] + segment['dsec']
           else:
             if periodid == monitorinfo['manifest']['primary']['last']['period']:
               if n == monitorinfo['manifest']['primary']['last']['segment']['n']:
@@ -238,9 +231,18 @@ def getperiodinfo(logger, xmlperiod, monitorinfo:dict):
 def gothroughsegments(logger, monitorinfo:dict):
   try:
     for period, segments in monitorinfo['manifest']['primary']['new']['segments'].items():
+      # Update ad break duration if period is ad break
+      if monitorinfo['manifest']['primary']['periods'][period]['isadbreak']:
+        adbreakid = period.split('_')[0]
+        if adbreakid in monitorinfo['manifest']['primary']['adbreaks'].keys():
+          for segment in segments:
+            monitorinfo['manifest']['primary']['adbreaks'][adbreakid]['segmentsduration'] = monitorinfo['manifest']['primary']['adbreaks'][adbreakid]['segmentsduration'] + segment['dsec']
+      # Go through all segments
       for segment in segments:
-        monitorinfo['manifest']['primary']['last']['period'] = period
-        monitorinfo['manifest']['primary']['last']['segment'] = segment
+        # Update last segment
+        monitorinfo['manifest']['primary']['last']['segment'] = segment.copy()
+      # Update last period
+      monitorinfo['manifest']['primary']['last']['period'] = period
   except Exception as e:
     logger.error(f"Error going through segments. Exception: {str(e)} Traceback: {traceback.format_exc()}")
 
@@ -248,36 +250,41 @@ def gothroughsegments(logger, monitorinfo:dict):
 def gothroughnewsegments(logger, monitorinfo:dict):
   try:
     for period, segments in monitorinfo['manifest']['primary']['new']['segments'].items():
-      # Close last ad break
-      if period != monitorinfo['manifest']['primary']['last']['period']:
-        adbreakid = monitorinfo['manifest']['primary']['last']['period'].split('_')[0]
+      # Update ad break duration if period is ad break
+      if monitorinfo['manifest']['primary']['periods'][period]['isadbreak']:
+        adbreakid = period.split('_')[0]
         if adbreakid in monitorinfo['manifest']['primary']['adbreaks'].keys():
-          closeadbreak = True
-          if monitorinfo['config']['origin'] == 'emt' and monitorinfo['manifest']['primary']['adbreaks'][adbreakid]['type'] == 'regular' and '_' in period:
-            closeadbreak = False
-          if closeadbreak:
-            monitorinfo['manifest']['primary']['adbreaks'][adbreakid]['segmentsduration'] = round(monitorinfo['manifest']['primary']['adbreaks'][adbreakid]['segmentsduration'], 3)
-            utils.addmetric(logger, monitorinfo, 'SegmentsDuration', monitorinfo['manifest']['primary']['adbreaks'][adbreakid]['segmentsduration'], 'Seconds', [{'Name': 'AdBreakType', 'Value': monitorinfo['manifest']['primary']['adbreaks'][adbreakid]['type']}])
-            if 'advertisedduration' in monitorinfo['manifest']['primary']['adbreaks'][adbreakid].keys() and monitorinfo['manifest']['primary']['adbreaks'][adbreakid]['advertisedduration'] > 0:
-              monitorinfo['manifest']['primary']['adbreaks'][adbreakid]['durationdelta'] = round(monitorinfo['manifest']['primary']['adbreaks'][adbreakid]['segmentsduration'] - monitorinfo['manifest']['primary']['adbreaks'][adbreakid]['advertisedduration'], 3)
-              utils.addmetric(logger, monitorinfo, 'DurationDelta', abs(monitorinfo['manifest']['primary']['adbreaks'][adbreakid]['durationdelta']), 'Seconds', [{'Name': 'AdBreakType', 'Value': monitorinfo['manifest']['primary']['adbreaks'][adbreakid]['type']}])
-              if abs(monitorinfo['manifest']['primary']['adbreaks'][adbreakid]['durationdelta']) > 0.1:
-                logger.warning(f"Ad break duration was {'longer' if monitorinfo['manifest']['primary']['adbreaks'][adbreakid]['durationdelta'] > 0 else 'shorter'} than advertised by {abs(monitorinfo['manifest']['primary']['adbreaks'][adbreakid]['durationdelta'])} seconds")
+          for segment in segments:
+            monitorinfo['manifest']['primary']['adbreaks'][adbreakid]['segmentsduration'] = monitorinfo['manifest']['primary']['adbreaks'][adbreakid]['segmentsduration'] + segment['dsec']
+      # If last period was an ad break and this period is not an ad break, send last ad break info
+      if monitorinfo['manifest']['primary']['periods'][monitorinfo['manifest']['primary']['last']['period']]['isadbreak'] and monitorinfo['manifest']['primary']['periods'][period]['isadbreak'] == False:
+        lastadbreakid = monitorinfo['manifest']['primary']['last']['period'].split('_')[0]
+        if lastadbreakid in monitorinfo['manifest']['primary']['adbreaks'].keys():
+          monitorinfo['manifest']['primary']['adbreaks'][lastadbreakid]['segmentsduration'] = round(monitorinfo['manifest']['primary']['adbreaks'][lastadbreakid]['segmentsduration'], 3)
+          utils.addmetric(logger, monitorinfo, 'SegmentsDuration', monitorinfo['manifest']['primary']['adbreaks'][lastadbreakid]['segmentsduration'], 'Seconds', [{'Name': 'AdBreakType', 'Value': monitorinfo['manifest']['primary']['adbreaks'][lastadbreakid]['type']}])
+          if 'advertisedduration' in monitorinfo['manifest']['primary']['adbreaks'][lastadbreakid].keys() and monitorinfo['manifest']['primary']['adbreaks'][lastadbreakid]['advertisedduration'] > 0:
+            monitorinfo['manifest']['primary']['adbreaks'][lastadbreakid]['durationdelta'] = round(monitorinfo['manifest']['primary']['adbreaks'][lastadbreakid]['segmentsduration'] - monitorinfo['manifest']['primary']['adbreaks'][lastadbreakid]['advertisedduration'], 3)
+            utils.addmetric(logger, monitorinfo, 'DurationDelta', abs(monitorinfo['manifest']['primary']['adbreaks'][lastadbreakid]['durationdelta']), 'Seconds', [{'Name': 'AdBreakType', 'Value': monitorinfo['manifest']['primary']['adbreaks'][lastadbreakid]['type']}])
+            if abs(monitorinfo['manifest']['primary']['adbreaks'][lastadbreakid]['durationdelta']) > 0.1:
+              logger.warning(f"Ad break duration was {'longer' if monitorinfo['manifest']['primary']['adbreaks'][lastadbreakid]['durationdelta'] > 0 else 'shorter'} than advertised by {abs(monitorinfo['manifest']['primary']['adbreaks'][lastadbreakid]['durationdelta'])} seconds")
+      # Go through all segments
       for segment in segments:
+        # Update new segments duration
         monitorinfo['manifest']['primary']['new']['duration'] = monitorinfo['manifest']['primary']['new']['duration'] + segment['dsec']
         # Check for discontinuity
         if segment['t'] != monitorinfo['manifest']['primary']['last']['segment']['nextt']:
           logger.warning(f"Discontinuity")
           utils.addmetric(logger, monitorinfo, 'Discontinuity', 1, 'Count', [])
-        # Update last segment info
-        monitorinfo['manifest']['primary']['last']['period'] = period
+        # Update last segment
         monitorinfo['manifest']['primary']['last']['segment'] = segment.copy()
+      # Update last period
+      monitorinfo['manifest']['primary']['last']['period'] = period
     # Check if found last segment
     if not monitorinfo['manifest']['primary']['foundlastsegment']:
       logger.warning(f"Last segment not found")
     # Update playhead
     if 'availabilitystarttime' in monitorinfo['manifest'].keys():
-      monitorinfo['manifest']['playhead'] = round((datetime.now(timezone.utc) - monitorinfo['manifest']['availabilitystarttime']).total_seconds())
+      monitorinfo['manifest']['primary']['playhead'] = round((datetime.now(timezone.utc) - monitorinfo['manifest']['availabilitystarttime']).total_seconds())
   except Exception as e:
     logger.error(f"Error going through new segments. Exception: {str(e)} Traceback: {traceback.format_exc()}")
 
