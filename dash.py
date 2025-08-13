@@ -13,7 +13,6 @@ def getsegmentinfo(logger, monitorinfo:dict, primarysegmenttemplate, xmlperiod, 
   try:
     periodid = xmlperiod.get('id')
     compt = 0
-    n = int(primarysegmenttemplate['xmlsegmenttemplate'].get('startNumber', '1'))
     timescale = int(primarysegmenttemplate['xmlsegmenttemplate'].get('timescale'))
     xmlsegmenttimeline = primarysegmenttemplate['xmlsegmenttemplate'].find('default:SegmentTimeline', ns)
     for element in xmlsegmenttimeline:
@@ -30,19 +29,17 @@ def getsegmentinfo(logger, monitorinfo:dict, primarysegmenttemplate, xmlperiod, 
             segment = {
               'd': d,
               'dsec': round(d / timescale, 3),
-              't': t + d * i,
-              'nextt': t + d * (i + 1),
-              'n': n
+              't': compt,
+              'nextt': compt + d
             }
             monitorinfo['manifest']['primary']['new']['segments'].setdefault(periodid, []).append(segment)
             if monitorinfo['manifest']['primary']['foundlastsegment']:
               logger.debug(f"Found new segment in period {periodid}: {segment}")
           else:
             if periodid == monitorinfo['manifest']['primary']['last']['period']:
-              if n == monitorinfo['manifest']['primary']['last']['segment']['n']:
+              if compt == monitorinfo['manifest']['primary']['last']['segment']['t']:
                 monitorinfo['manifest']['primary']['foundlastsegment'] = True
-          n = n + 1
-        compt = compt + d * (r + 1)
+          compt = compt + d
   except Exception as e:
     logger.error(f"Error finding new segments. Primarysegmenttemplate: {primarysegmenttemplate} Exception: {str(e)} Traceback: {traceback.format_exc()}")
 
