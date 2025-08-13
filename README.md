@@ -34,7 +34,7 @@ live, dash, tnf25, feed01p1_pdx_1, emp, configs/default.json, https://abcd.media
 
 ### Notes
 
-An origin endpoint is identified by values in the first 5 columns. Each line should have a unique endpoint identifier. VOD endpoints are currently not supported, therefore endpoint type should always be `live`. EMT origin endpoints should have origin name set to `emt` for correct ad break detection. Users should create their own monitoring config files based on the default config `configs/default.json` file to match their monitoring requirements.
+An origin endpoint is identified by values in the first 5 columns. Each line should have a unique endpoint identifier. VOD endpoints are currently not supported, therefore endpoint type should always be `live`. EMT origin endpoints should have origin name set to `emt` for correct ad break detection. Users should create their own monitoring config files based on the default config `configs/default.json` file to match their monitoring requirements. Available HLS rendition identifiers in the config file are `v, a, s, *`, meaning the tool can monitor one or multiple video, audio or subtitle renditions.
 
 ## Dynamic Handling of Changes
 
@@ -64,6 +64,7 @@ Common dimensions for all metrics are `Type`, `Technology`, `Workload`, `Endpoin
 | Ad breaks | AdvertisedDuration | AdBreakType                    | Ad break SCTE duration in seconds with "AdBreakType" dimension one of "regular" or "overlay"                                                |
 | Ad breaks | SegmentsDuration   | AdBreakType                    | Ad break segments duration sum in seconds with "AdBreakType" dimension one of "regular" or "overlay"                                        |
 | Ad breaks | DurationDelta      | AdBreakType                    | Duration delta between advertised ad break duration and sum of ad break segments with "AdBreakType" dimension one of "regular" or "overlay" |
+| Ad breaks | AvailNum           | AdBreakType                    | Ad break avail num from SCTE splice insert message with "AdBreakType" dimension one of "regular" or "overlay"                               |
 
 ## Reporting
 

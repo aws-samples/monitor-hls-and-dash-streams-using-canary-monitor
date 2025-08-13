@@ -16,7 +16,7 @@
     }
   },
   "hls": {
-    "renditions": [ "v1", "a1" ],
+    "renditions": [ "v", "a" ],
     "emtadsegmentprefix": "asset"
   },
   "validations": {

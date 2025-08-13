@@ -134,11 +134,12 @@ def decoderesponse(response, utf:bool):
 
 
 # Save response to disk or to S3
-def saveresponse(logger, response, monitorinfo:dict, filetypegroup:str, timestamp:str, binary:bool):
+def saveresponse(logger, response, monitorinfo:dict, filetypegroup:str, filename:str, binary:bool, rendition:str='multi'):
   isgzip = False
   extension = ''
   try:
     if response:
+      timestamp = f"{datetime.now(timezone.utc).strftime('%Y_%m_%d_%H_%M_%S_%f')}"
       # Check technology for extension
       if filetypegroup == 'manifests':
         if monitorinfo['config']['technology'] == 'dash':
@@ -152,11 +153,13 @@ def saveresponse(logger, response, monitorinfo:dict, filetypegroup:str, timestam
       # If local
       if monitorinfo['config']['endpointconfig'][filetypegroup]['save']['local']:
         folderpath = pathlib.Path('archive', monitorinfo['config']['type'], monitorinfo['config']['workload'], monitorinfo['config']['origin'], monitorinfo['config']['endpoint'], monitorinfo['config']['technology'], filetypegroup)
+        if monitorinfo['config']['technology'] == 'hls' and filetypegroup == 'manifests':
+          folderpath = pathlib.Path('archive', monitorinfo['config']['type'], monitorinfo['config']['workload'], monitorinfo['config']['origin'], monitorinfo['config']['endpoint'], monitorinfo['config']['technology'], filetypegroup, rendition)
         folderpath.mkdir(parents=True, exist_ok=True)
         if binary:
           pass
         else:
-          filepath = folderpath / f"{timestamp}{extension}.gz"
+          filepath = folderpath / f"{timestamp}{filename}{extension}.gz"
           if isgzip:
             with open(filepath, 'wb') as f:
               f.write(response.data)
@@ -181,24 +184,17 @@ def wait(logger, starttime:float, duration:float):
 def tracking(logger, monitorinfo:dict, endpointconfig:dict):
   try:
     while not monitorinfo['state']['stop'].is_set():
-      playhead = None
-      ready = True
       starttime = time.perf_counter()
       if endpointconfig['tracking']['get']:
-        logger.debug(f"Requesting tracking")
-        trackingurl = endpointconfig['trackingurl']
-        if monitorinfo['config']['endpointconfig']['tracking']['playhead']:
-          if 'playhead' in monitorinfo['manifest'].keys():
-            playhead = str(monitorinfo['manifest']['playhead'])
-            trackingurl = f"{trackingurl}?aws.playheadPositionInSeconds={playhead}"
-          else:
-            ready = False
-            logger.debug(f"Waiting for playhead to be ready")
-        if ready:
+        playhead = monitorinfo['manifest']['primary']['playhead']
+        if (endpointconfig['tracking']['playhead'] and playhead) or not endpointconfig['tracking']['playhead']:
+          trackingurl = f"{endpointconfig['trackingurl']}?aws.playheadPositionInSeconds={playhead}" if endpointconfig['tracking']['playhead'] else endpointconfig['trackingurl']
+          logger.debug(f"Requesting tracking")
           response = request(logger, 'GET', trackingurl, 'tracking', '', monitorinfo)
           if endpointconfig['tracking']['save']['local']:
-            filenameprefix = f"{datetime.now(timezone.utc).strftime('%Y_%m_%d_%H_%M_%S_%f')}_playhead_{playhead}" if playhead is not None else f"{datetime.now(timezone.utc).strftime('%Y_%m_%d_%H_%M_%S_%f')}"
-            saveresponse(logger, response, monitorinfo, 'tracking', filenameprefix, False)
+            saveresponse(logger, response, monitorinfo, 'tracking', f"_playhead_{playhead}" if endpointconfig['tracking']['playhead'] else "", False)
+        else:
+          logger.debug(f"Waiting for playhead before requesting tracking")
       wait(logger, starttime, endpointconfig['tracking']['frequency'])
   except Exception as e:
     logger.error(f"Encountered error in tracking thread. Exception: {str(e)} Traceback: {traceback.format_exc()}")

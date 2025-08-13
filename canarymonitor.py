@@ -22,6 +22,7 @@ from urllib.parse import urljoin
 from queue import Queue
 import utils
 import dash
+import hls
 
 
 # Initialize widget positions when rendering dashboard
@@ -237,7 +238,7 @@ def getrenditions(logger, responsedata: str, monitorinfo: dict):
 
 
 # HLS rendition monitor
-def hls(monitorinfo: dict, rendition: dict, loggingconfig: dict):
+def hlsmonitor(monitorinfo: dict, rendition: dict, loggingconfig: dict):
   logging.config.dictConfig(loggingconfig)
   monitorlogger = logging.getLogger('monitor')
   logger = logging.LoggerAdapter(monitorlogger, {'type': monitorinfo['type'], 'origin': monitorinfo['origin'], 'endpoint': monitorinfo['endpoint'], 'technology': monitorinfo['technology'], 'rendition': rendition['id']})
@@ -294,7 +295,9 @@ def monitor(endpointidentifier:tuple, endpointconfig:dict, stopflag, changeflag,
       'workload': endpointidentifier[2],
       'endpoint': endpointidentifier[3],
       'origin': endpointidentifier[4],
-      'endpointconfig': endpointconfig
+      'endpointconfig': endpointconfig,
+      'logging': loggingconfig,
+      'sharedwithmain': sharedwithmain
     },
     'state': {
       'starttimeperf': time.perf_counter(),
@@ -304,16 +307,17 @@ def monitor(endpointidentifier:tuple, endpointconfig:dict, stopflag, changeflag,
       'stop': threading.Event()
     },
     'metrics': {
-      'lastpublishtime': time.perf_counter() - random.uniform(0,20),
-      'publishinterval': 20,
+      'lastpublishtime': time.perf_counter() - random.uniform(0,15),
+      'publishinterval': 15,
       'queue': Queue(),
     },
     'reporting': {
-      'lastsavetime': time.perf_counter() - random.uniform(0,20),
-      'saveinterval': 20
+      'lastsavetime': time.perf_counter() - random.uniform(0,15),
+      'saveinterval': 15
     },
     'manifest': {
       'primary': {
+        'playhead': None,
         'foundlastsegment': False,
         'adbreaks': {},
         'periods': {},
@@ -332,6 +336,9 @@ def monitor(endpointidentifier:tuple, endpointconfig:dict, stopflag, changeflag,
           'window': {},
           'size': 20.0
         }
+      },
+      'multi': {
+        'lasthash': ''
       }
     }
   }
@@ -341,7 +348,7 @@ def monitor(endpointidentifier:tuple, endpointconfig:dict, stopflag, changeflag,
   logger = logging.LoggerAdapter(monitorlogger, {'type': monitorinfo['config']['type'], 'origin': monitorinfo['config']['origin'], 'workload': monitorinfo['config']['workload'], 'endpoint': monitorinfo['config']['endpoint'], 'technology': monitorinfo['config']['technology'], 'rendition': 'multi'})
   if endpointconfig['loglevel'] in utils.loglevels.keys():
     logger.setLevel(utils.loglevels[endpointconfig['loglevel']])
-  logger.info(f"Started monitoring")
+  logger.info(f"Started monitoring origin endpoint {endpointconfig['manifesturl']}")
   # Start tracking
   try:
     if 'trackingurl' in endpointconfig.keys():
@@ -361,14 +368,17 @@ def monitor(endpointidentifier:tuple, endpointconfig:dict, stopflag, changeflag,
       response = utils.request(logger, 'GET', endpointconfig['manifesturl'], 'manifest', 'multi', monitorinfo)
       # Save manifest response
       if endpointconfig['manifests']['save']['local']:
-        utils.saveresponse(logger, response, monitorinfo, 'manifests', f"{datetime.now(timezone.utc).strftime('%Y_%m_%d_%H_%M_%S_%f')}", False)
+        utils.saveresponse(logger, response, monitorinfo, 'manifests', "", False)
       # Process manifest response if configured to validate manifests
       if endpointconfig['validations']['perform']:
         if monitorinfo['config']['type'] == 'live':
           if response:
             clearup(monitorinfo)
             if monitorinfo['config']['technology'] == 'hls':
-              pass
+              manifesthash = hashlib.md5(utils.decoderesponse(response, False)).hexdigest()
+              if manifesthash != monitorinfo['manifest']['multi']['lasthash']:
+                hls.restartthreads(logger, monitorinfo, utils.decoderesponse(response, True))
+              monitorinfo['manifest']['multi']['lasthash'] = manifesthash
             elif monitorinfo['config']['technology'] == 'dash':
               manifestlastupdated = getmanifestlastupdated(response)
               if manifestlastupdated != monitorinfo['manifest']['primary']['headers']['manifestlastupdated'] or manifestlastupdated == 0:
@@ -380,12 +390,13 @@ def monitor(endpointidentifier:tuple, endpointconfig:dict, stopflag, changeflag,
             utils.checkforstaleness(logger, monitorinfo, requesttime)
       # Publish metrics to CW
       if endpointconfig['cwmetrics'] and not monitorinfo['args'].no_aws:
-        if time.perf_counter() - monitorinfo['metrics']['lastpublishtime'] > monitorinfo['metrics']['publishinterval']:
+        if requesttime - monitorinfo['metrics']['lastpublishtime'] > monitorinfo['metrics']['publishinterval']:
           publishmetrics(logger, monitorinfo)
           monitorinfo['metrics']['lastpublishtime'] = time.perf_counter()
       # Save report
-      if time.perf_counter() - monitorinfo['reporting']['lastsavetime'] > monitorinfo['reporting']['saveinterval']:
+      if requesttime - monitorinfo['reporting']['lastsavetime'] > monitorinfo['reporting']['saveinterval']:
         savereport(logger, monitorinfo, False)
+        monitorinfo['reporting']['lastsavetime'] = requesttime
       # Wait
       utils.wait(logger, requesttime, endpointconfig['manifests']['frequency'])
   except KeyboardInterrupt:
@@ -503,6 +514,8 @@ def renderandsavedashboard(renderinfo:dict):
 
 # Create CW dashboards
 def createdashboards():
+  # Give HLS monitor time to collect information about renditions
+  time.sleep(15)
   try:
     organizedendpoints = {}
     # Prepare organized dictionary of endpoints for render
@@ -524,6 +537,11 @@ def createdashboards():
           'trackingrequests': False,
           'config': config
         }
+        # Include renditions
+        if endpointinfo['technology'] == 'hls':
+          endpointinfo['renditions'] = sharedwithmain.get(endpoint, {}).get('hlsrenditions', [])
+          if not endpointinfo['renditions']:
+            mainlogger.warning(f"No HLS renditions found for endpoint {endpoint}")
         # if config['segments']['get'] or config['segments']['head']:
         #   organizedendpoints[(endpoint[0], endpoint[2], endpoint[4])]['segmentrequests'] = True
         #   endpointinfo['segmentrequests'] = True

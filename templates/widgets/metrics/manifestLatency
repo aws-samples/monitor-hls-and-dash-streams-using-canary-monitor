@@ -10,7 +10,7 @@
       {% for endpoint in renderinfo['endpoints'] %}
         {% if ns.count > 0 %}, {% endif %}[ "CanaryMonitor", "Latency", "Origin", "{{renderinfo['origin']}}", "Type", "{{renderinfo['type']}}", "Endpoint", "{{endpoint['endpoint']}}", "Technology", "{{endpoint['technology']}}", "Rendition", "multi", "RequestType", "manifest", "Workload", "{{renderinfo['workload']}}" ]{% set ns.count = ns.count + 1 %}
         {% if endpoint['technology'] == 'hls' %}
-          {% for rendition in endpoint['config']['renditions'] %}
+          {% for rendition in endpoint['renditions'] %}
             {% if ns.count > 0 %}, {% endif %}[ "CanaryMonitor", "Latency", "Origin", "{{renderinfo['origin']}}", "Type", "{{renderinfo['type']}}", "Endpoint", "{{endpoint['endpoint']}}", "Technology", "{{endpoint['technology']}}", "Rendition", "{{rendition}}", "RequestType", "manifest", "Workload", "{{renderinfo['workload']}}" ]{% set ns.count = ns.count + 1 %}
           {% endfor %}
         {% endif %}

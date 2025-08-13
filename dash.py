@@ -258,7 +258,7 @@ def gothroughnewsegments(logger, monitorinfo:dict):
         if adbreakid in monitorinfo['manifest']['primary']['adbreaks'].keys():
           for segment in segments:
             monitorinfo['manifest']['primary']['adbreaks'][adbreakid]['segmentsduration'] = monitorinfo['manifest']['primary']['adbreaks'][adbreakid]['segmentsduration'] + segment['dsec']
-      # If last period was an ad break and this period is not an ad break, send last ad break info
+      # If last period was an ad break send last ad break info
       if monitorinfo['manifest']['primary']['periods'][monitorinfo['manifest']['primary']['last']['period']]['isadbreak']:
         lastadbreakid = monitorinfo['manifest']['primary']['last']['period'].split('_')[0]
         if lastadbreakid not in period:

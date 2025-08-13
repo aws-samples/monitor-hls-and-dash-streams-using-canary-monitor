@@ -18,7 +18,7 @@
     "region": "{{dashboardconfig['region']}}",
     "stat": "Sum",
     "period": 60,
-    "title": "Tracking Failure",
+    "title": "Tracking Timeout",
     "yAxis": {
       "left": {
         "showUnits": false,
