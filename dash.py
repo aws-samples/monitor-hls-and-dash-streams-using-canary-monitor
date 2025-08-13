@@ -13,7 +13,7 @@ def getsegmentinfo(logger, monitorinfo:dict, primarysegmenttemplate, xmlperiod, 
   try:
     periodid = xmlperiod.get('id')
     compt = 0
-    n = int(primarysegmenttemplate['xmlsegmenttemplate'].get('startNumber'))
+    n = int(primarysegmenttemplate['xmlsegmenttemplate'].get('startNumber', '1'))
     timescale = int(primarysegmenttemplate['xmlsegmenttemplate'].get('timescale'))
     xmlsegmenttimeline = primarysegmenttemplate['xmlsegmenttemplate'].find('default:SegmentTimeline', ns)
     for element in xmlsegmenttimeline:
