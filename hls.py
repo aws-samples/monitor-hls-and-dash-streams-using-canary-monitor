@@ -2,10 +2,10 @@ import logging
 import logging.config
 import traceback
 import utils
-import m3u8
 from urllib.parse import urljoin
 import threading
 import time
+import re
 
 
 def monitor(renditionid, url:str, rendition:dict, monitorinfo:dict, primary:bool):
@@ -37,29 +37,36 @@ def startthreads(logger, monitorinfo:dict, response):
     'subtitles': {}
   }
   try:
-    # Identify renditions
-    multiplaylist = m3u8.loads(response)
-    # Video
-    for playlist in multiplaylist.playlists:
-      if playlist.uri:
-        url = urljoin(monitorinfo['config']['endpointconfig']['manifesturl'], playlist.uri)
-        rendition = {
-          'index': len(renditions['video']) + 1,
-          'media': 'video',
-          'bandwidth': playlist.stream_info.bandwidth
-        }
-        if url not in renditions['video'].keys():
-          renditions['video'][url] = rendition
-    # Other media
-    for media in multiplaylist.media:
-      if media.uri and media.type.lower() in {'audio', 'subtitles'}:
-        url = urljoin(monitorinfo['config']['endpointconfig']['manifesturl'], media.uri)
-        rendition = {
-          'index': len(renditions[media.type.lower()]) + 1,
-          'media': media.type.lower()
-        }
-        if url not in renditions[media.type.lower()].keys():
-          renditions[media.type.lower()][url] = rendition
+    lines = response.splitlines()
+    for i, line in enumerate(lines):
+      line = line.strip()
+      # Identify video renditions
+      if line.startswith('#EXT-X-STREAM-INF:'):
+        parts = re.split(r',(?=(?:[^"]*"[^"]*")*[^"]*$)', line[len('#EXT-X-STREAM-INF:'):])
+        attrs = {k.strip(): v.strip().strip('"') for kv in parts if '=' in kv for k, v in [kv.split('=', 1)]}
+        if i + 1 < len(lines) and not lines[i + 1].strip().startswith('#'):
+          url = urljoin(monitorinfo['config']['endpointconfig']['manifesturl'], lines[i + 1].strip())
+          rendition = {
+            'index': len(renditions['video']) + 1,
+            'media': "video",
+            'bandwidth': int(attrs.get('BANDWIDTH', 0))
+          }
+          if url not in renditions['video'].keys():
+            renditions['video'][url] = rendition
+      # Identify audio and subtitles
+      elif line.startswith('#EXT-X-MEDIA:'):
+        parts = re.split(r',(?=(?:[^"]*"[^"]*")*[^"]*$)', line[len('#EXT-X-MEDIA:'):])
+        attrs = {k.strip(): v.strip().strip('"') for kv in parts if '=' in kv for k, v in [kv.split('=', 1)]}
+        media = attrs.get('TYPE', '').lower()
+        uri = attrs.get('URI', '').strip()
+        if media and media in {'audio', 'subtitles', 'video'} and uri:
+          url = urljoin(monitorinfo['config']['endpointconfig']['manifesturl'], uri)
+          rendition = {
+            'index': len(renditions[media]) + 1,
+            'media': media
+          }
+          if url not in renditions[media].keys():
+            renditions[media][url] = rendition
     logger.debug(f"Found {len(renditions['video'])} video, {len(renditions['audio'])} audio and {len(renditions['subtitles'])} subtitle renditions: {renditions}")
     # Start threads
     primary = True
