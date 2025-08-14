@@ -5,7 +5,9 @@
     "frequency": 5.0,
     "save": {
       "local": false
-    }
+    },
+    "hlsrenditions": [ "v", "a" ],
+    "adsegmentprefix": "asset"
   },
   "tracking": {
     "frequency": 6.0,
@@ -14,10 +16,6 @@
     "save": {
       "local": false
     }
-  },
-  "hls": {
-    "renditions": [ "v", "a" ],
-    "emtadsegmentprefix": "asset"
   },
   "validations": {
     "perform": true

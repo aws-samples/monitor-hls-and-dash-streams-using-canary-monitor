@@ -59,6 +59,15 @@ def getpositions(widgettype:str):
   return [x, y]
 
 
+# Update default endpointconfig with user provided settings
+def endpointconfigupdate(endpointconfig, userconfig):
+  for k, v in userconfig.items():
+    if k in endpointconfig and isinstance(endpointconfig[k], dict) and isinstance(v, dict):
+      endpointconfigupdate(endpointconfig[k], v)
+    else:
+      endpointconfig[k] = v
+
+
 # Read endpoint information from CSV file content into endpoints dictionary
 def readcsvfile(filename, content, endpoints:dict):
   try:
@@ -74,16 +83,16 @@ def readcsvfile(filename, content, endpoints:dict):
               validentry = False
               break
           if validentry:
-            endpointconfig = {}
+            endpointconfig = defaultendpointconfig.copy()
             identifier = (splitline[0].strip().lower(), splitline[1].strip().lower(), splitline[2].strip(), splitline[3].strip(), splitline[4].strip().lower()) # endpoint type, technology, workload name, endpoint name, origin name
             # Get endpoint configuration
-            endpointconfig.update(defaultendpointconfig)
             if splitline[5].strip() not in mainconfig['hashtable']['config'].keys():
               gethash('config', splitline[5].strip(), True)
             try:
               if pathlib.Path(splitline[5].strip()).is_file():
                 with open(splitline[5].strip(), 'r') as file:
-                  endpointconfig.update(json.load(file))
+                  endpointconfigupdate(endpointconfig, json.load(file))
+                  # endpointconfig.update(json.load(file))
               else:
                 mainlogger.warning(f"Failed inputting endpoint on line {index} from {filename} because config file {splitline[5].strip()} does not exist")
                 continue
