@@ -71,18 +71,19 @@ def startthreads(logger, monitorinfo:dict, response):
     # Start threads
     primary = True
     activerenditions = []
-    for renditionstring in monitorinfo['config']['endpointconfig']['hls']['renditions']:
+    for renditionstring in monitorinfo['config']['endpointconfig']['manifests']['hlsrenditions']:
       if renditionstring:
         for media in renditions.keys():
           if media.startswith(renditionstring) or renditionstring == '*':
             for url, rendition in renditions[media].items():
               renditionid = f"{media[0]}{rendition['index']}"
-              activerenditions.append(renditionid)
-              monitorinfo['state']['threads'][renditionid] = threading.Thread(target=monitor, args=(renditionid, url, rendition, monitorinfo, primary))
-              monitorinfo['state']['threads'][renditionid].start()
-              primary = False
-              if renditionstring != '*':
-                break
+              if renditionid not in activerenditions:
+                activerenditions.append(renditionid)
+                monitorinfo['state']['threads'][renditionid] = threading.Thread(target=monitor, args=(renditionid, url, rendition, monitorinfo, primary))
+                monitorinfo['state']['threads'][renditionid].start()
+                primary = False
+                if renditionstring != '*':
+                  break
     # Update shared object with main process to inform about renditions
     monitorinfo['config']['sharedwithmain'][(monitorinfo['config']['type'], monitorinfo['config']['technology'], monitorinfo['config']['workload'], monitorinfo['config']['endpoint'], monitorinfo['config']['origin'])] = {'hlsrenditions': activerenditions}
   except Exception as e:

@@ -142,7 +142,6 @@ def getperiodinfo(logger, xmlperiod, monitorinfo:dict):
             if xmltimesignal is not None:
               sctemessage['type'] = 'timesignal'
             # Segmentation descriptors
-            # todo: get duration from descriptor
             xmlsegmentationdescriptors = xmlspliceinfosection.findall('.//{*}SegmentationDescriptor')
             for xmlsegmentationdescriptor in xmlsegmentationdescriptors:
               segmentationdescriptor = {}

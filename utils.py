@@ -146,6 +146,8 @@ def saveresponse(logger, response, monitorinfo:dict, filetypegroup:str, filename
           extension = '.mpd'
         else:
           extension = '.m3u8'
+      elif filetypegroup == 'tracking':
+        extension = '.json'
       # Check if response is gzip
       if 'Content-Encoding' in response.headers:
         if response.headers['Content-Encoding'] == 'gzip':
