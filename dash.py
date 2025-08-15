@@ -14,6 +14,7 @@ def getsegmentinfo(logger, monitorinfo:dict, primarysegmenttemplate, xmlperiod, 
     periodid = xmlperiod.get('id')
     compt = 0
     timescale = int(primarysegmenttemplate['xmlsegmenttemplate'].get('timescale'))
+    pto = int(primarysegmenttemplate['xmlsegmenttemplate'].get('presentationTimeOffset', 0))
     xmlsegmenttimeline = primarysegmenttemplate['xmlsegmenttemplate'].find('default:SegmentTimeline', ns)
     for element in xmlsegmenttimeline:
       # No pattern
@@ -25,15 +26,15 @@ def getsegmentinfo(logger, monitorinfo:dict, primarysegmenttemplate, xmlperiod, 
           compt = t
         for i in range(r + 1):
           if monitorinfo['manifest']['primary']['foundlastsegment'] or allsegments:
-            # Add segment to new segments
             segment = {
               'd': d,
               'dsec': round(d / timescale, 3),
               't': compt,
-              'nextt': compt + d
+              'nextt': compt + d,
+              'pts': round((compt - pto) / timescale, 3)
             }
             monitorinfo['manifest']['primary']['new']['segments'].setdefault(periodid, []).append(segment)
-            if monitorinfo['manifest']['primary']['foundlastsegment']:
+            if not allsegments:
               logger.debug(f"Found new segment in period {periodid}: {segment}")
           else:
             if periodid == monitorinfo['manifest']['primary']['last']['period']:
