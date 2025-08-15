@@ -9,7 +9,7 @@ class UnsupportedManifest(Exception):
 
 # Find new segments in a period
 def getsegmentinfo(logger, monitorinfo:dict, primarysegmenttemplate, xmlperiod, allsegments:bool):
-  ns = {'default': 'urn:mpeg:dash:schema:mpd:2011', 'scte': 'urn:scte:scte35:2013:xml'}
+  ns = {'default': 'urn:mpeg:dash:schema:mpd:2011'}
   try:
     periodid = xmlperiod.get('id')
     compt = 0
@@ -49,7 +49,7 @@ def getsegmentinfo(logger, monitorinfo:dict, primarysegmenttemplate, xmlperiod, 
 def getsegmenttemplateinfo(logger, xmlperiod, monitorinfo):
   segmenttemplates = []
   primarysegmenttemplate = None
-  ns = {'default': 'urn:mpeg:dash:schema:mpd:2011', 'scte': 'urn:scte:scte35:2013:xml'}
+  ns = {'default': 'urn:mpeg:dash:schema:mpd:2011'}
   try:
     xmladaptationsets = xmlperiod.findall('default:AdaptationSet', ns)
     for xmladaptationset in xmladaptationsets:
@@ -299,32 +299,36 @@ def getavailabilitystarttime(logger, xmlroot, monitorinfo:dict):
 
 # Dash monitor
 def monitor(logger, monitorinfo:dict, response:bytes):
-  ns = {'default': 'urn:mpeg:dash:schema:mpd:2011', 'scte': 'urn:scte:scte35:2013:xml'}
+  ns = {'default': 'urn:mpeg:dash:schema:mpd:2011'}
   xmlroot = et.fromstring(response)
+  xmlmpdtype = xmlroot.get('type', '')
   try:
     if xmlroot is not None:
-      xmlperiods = xmlroot.findall('default:Period', ns)
-      getavailabilitystarttime(logger, xmlroot, monitorinfo)
-      if not monitorinfo['manifest']['primary']['last']['segment']:
-        # Go through all periods
-        for xmlperiod in xmlperiods:
-          getperiodinfo(logger, xmlperiod, monitorinfo)
-          segmenttemplates, primarysegmenttemplate = getsegmenttemplateinfo(logger, xmlperiod, monitorinfo)
-          getsegmentinfo(logger, monitorinfo, primarysegmenttemplate, xmlperiod, True)
-        gothroughsegments(logger, monitorinfo)
-      else:
-        # Go through last and any new periods
-        for xmlperiod in xmlperiods:
-          if xmlperiod.get('id') == monitorinfo['manifest']['primary']['last']['period'] or monitorinfo['manifest']['primary']['foundlastsegment']:
-            # If this is a new period
-            if monitorinfo['manifest']['primary']['foundlastsegment']:
-              getperiodinfo(logger, xmlperiod, monitorinfo)
+      if xmlmpdtype == 'dynamic':
+        xmlperiods = xmlroot.findall('default:Period', ns)
+        getavailabilitystarttime(logger, xmlroot, monitorinfo)
+        if not monitorinfo['manifest']['primary']['last']['segment']:
+          # Go through all periods
+          for xmlperiod in xmlperiods:
+            getperiodinfo(logger, xmlperiod, monitorinfo)
             segmenttemplates, primarysegmenttemplate = getsegmenttemplateinfo(logger, xmlperiod, monitorinfo)
-            getsegmentinfo(logger, monitorinfo, primarysegmenttemplate, xmlperiod, False)
-        gothroughnewsegments(logger, monitorinfo)
-      # Stop if did not find any segments
-      if not monitorinfo['manifest']['primary']['last']['segment']:
-        raise UnsupportedManifest(f"Unable to find segments")
+            getsegmentinfo(logger, monitorinfo, primarysegmenttemplate, xmlperiod, True)
+          gothroughsegments(logger, monitorinfo)
+        else:
+          # Go through last and any new periods
+          for xmlperiod in xmlperiods:
+            if xmlperiod.get('id') == monitorinfo['manifest']['primary']['last']['period'] or monitorinfo['manifest']['primary']['foundlastsegment']:
+              # If this is a new period
+              if monitorinfo['manifest']['primary']['foundlastsegment']:
+                getperiodinfo(logger, xmlperiod, monitorinfo)
+              segmenttemplates, primarysegmenttemplate = getsegmenttemplateinfo(logger, xmlperiod, monitorinfo)
+              getsegmentinfo(logger, monitorinfo, primarysegmenttemplate, xmlperiod, False)
+          gothroughnewsegments(logger, monitorinfo)
+        # Stop if did not find any segments
+        if not monitorinfo['manifest']['primary']['last']['segment']:
+          raise UnsupportedManifest(f"Unable to find segments")
+      else:
+        logger.warning(f"Manifest type is '{xmlmpdtype}', should be 'dynamic'")
     else:
       raise UnsupportedManifest(f"No XML root")
   except UnsupportedManifest as e:
