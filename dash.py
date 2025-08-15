@@ -281,9 +281,6 @@ def gothroughnewsegments(logger, monitorinfo:dict):
     # Check if found last segment
     if not monitorinfo['manifest']['primary']['foundlastsegment']:
       logger.warning(f"Last segment not found")
-    # Update playhead
-    if 'availabilitystarttime' in monitorinfo['manifest'].keys():
-      monitorinfo['manifest']['primary']['playhead'] = round((datetime.now(timezone.utc) - monitorinfo['manifest']['availabilitystarttime']).total_seconds())
   except Exception as e:
     logger.error(f"Error going through new segments. Exception: {str(e)} Traceback: {traceback.format_exc()}")
 

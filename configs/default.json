@@ -11,11 +11,12 @@
   },
   "tracking": {
     "frequency": 6.0,
-    "playhead": false,
     "get": true,
     "save": {
       "local": false
-    }
+    },
+    "playhead": false,
+    "playheaddelay": 10
   },
   "validations": {
     "perform": true

@@ -425,7 +425,7 @@ def monitor(endpointidentifier:tuple, endpointconfig:dict, stopflag, changeflag,
 
 # Find what endpoint configuration changes were made to know if worked needs to be restarted
 def needtorestartworker(old:dict, new:dict):
-  allowedpaths = {"root['cwmetrics']", "root['manifests']['frequency']", "root['manifests']['save']['local']", "root['tracking']['frequency']", "root['tracking']['get']", "root['tracking']['save']['local']", "root['tracking']['playhead']", "root['loglevel']"}
+  allowedpaths = {"root['cwmetrics']", "root['manifests']['frequency']", "root['manifests']['save']['local']", "root['tracking']['frequency']", "root['tracking']['get']", "root['tracking']['save']['local']", "root['tracking']['playhead']", "root['tracking']['playheaddelay']", "root['loglevel']"}
   diff = DeepDiff(old, new)
   if 'values_changed' not in diff:
     return True
