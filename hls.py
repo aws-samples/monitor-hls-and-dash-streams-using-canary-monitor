@@ -7,6 +7,34 @@ import threading
 import time
 import re
 
+def getmetadatatags(logger, responselines):
+  metadata = {}
+  try:
+    for line in responselines:
+      line = line.strip()
+      if line.startswith('#'):
+        if ':' in line:
+          tag, value = line[1:].split(':', 1)
+          metadata[tag] = int(value) if re.fullmatch(r"-?\d+", value) else value
+      else:
+        break
+    return metadata
+  except Exception as e:
+    logger.error(f"Error getting metadata tags. Exception: {str(e)} Traceback: {traceback.format_exc()}")
+    raise
+
+
+def getsegmentinfo(logger, responselines, monitorinfo:dict, allsegments):
+  try:
+    for line in responselines:
+      line = line.strip()
+      if line.startswith('#'):
+        pass
+      else:
+        pass
+  except Exception as e:
+    logger.error(f"Error getting metadata tags. Exception: {str(e)} Traceback: {traceback.format_exc()}")
+
 
 def monitor(renditionid, url:str, rendition:dict, monitorinfo:dict, primary:bool):
   logging.config.dictConfig(monitorinfo['config']['logging'])
@@ -23,6 +51,16 @@ def monitor(renditionid, url:str, rendition:dict, monitorinfo:dict, primary:bool
       # Save manifest response
       if monitorinfo['config']['endpointconfig']['manifests']['save']['local']:
         utils.saveresponse(logger, response, monitorinfo, 'manifests', "", False, renditionid)
+      if monitorinfo['config']['endpointconfig']['validations']['perform']:
+        manifestlastupdated = utils.getmanifestlastupdated(response)
+        if manifestlastupdated != monitorinfo['manifest']['primary']['headers']['manifestlastupdated'] or manifestlastupdated == 0:
+          responselines = utils.decoderesponse(response, True).splitlines()
+          metadatatags = getmetadatatags(logger, responselines)
+          if not monitorinfo['manifest']['primary']['last']['segment']:
+            getsegmentinfo(logger, responselines, monitorinfo, True)
+          else:
+            pass
+        monitorinfo['manifest']['primary']['headers']['manifestlastupdated'] = manifestlastupdated
       utils.wait(logger, requesttime, monitorinfo['config']['endpointconfig']['manifests']['frequency'])
   except Exception as e:
     logger.error(f"Encountered error while monitoring. Exception: {str(e)} Traceback: {traceback.format_exc()}")

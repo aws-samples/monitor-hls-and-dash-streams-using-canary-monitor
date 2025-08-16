@@ -221,3 +221,11 @@ def checkforstaleness(logger, monitorinfo:dict, requesttime):
       logger.warning(f"Stale manifest")
   except Exception as e:
     logger.error(f"Error while checking for staleness. Exception: {str(e)} Traceback: {traceback.format_exc()}")
+
+
+# Get manifest last updated header
+def getmanifestlastupdated(response):
+  manifestlastupdated = 0
+  if 'X-MediaPackage-Manifest-Last-Updated' in response.headers:
+    manifestlastupdated = int(response.headers['X-MediaPackage-Manifest-Last-Updated'])
+  return manifestlastupdated
