@@ -154,9 +154,10 @@ def saveresponse(logger, response, monitorinfo:dict, filetypegroup:str, filename
           isgzip = True
       # If local
       if monitorinfo['config']['endpointconfig'][filetypegroup]['save']['local']:
-        folderpath = pathlib.Path('archive', monitorinfo['config']['type'], monitorinfo['config']['workload'], monitorinfo['config']['origin'], monitorinfo['config']['endpoint'], monitorinfo['config']['technology'], filetypegroup)
-        if monitorinfo['config']['technology'] == 'hls' and filetypegroup == 'manifests':
-          folderpath = pathlib.Path('archive', monitorinfo['config']['type'], monitorinfo['config']['workload'], monitorinfo['config']['origin'], monitorinfo['config']['endpoint'], monitorinfo['config']['technology'], filetypegroup, rendition)
+        if filetypegroup in ['manifests', 'tracking']:
+          folderpath = pathlib.Path('archive', monitorinfo['config']['type'], monitorinfo['config']['workload'], monitorinfo['config']['origin'], monitorinfo['config']['endpoint'], monitorinfo['config']['technology'], filetypegroup, datetime.now(timezone.utc).strftime('%Y-%m-%d'), rendition if monitorinfo['config']['technology'] == 'hls' and filetypegroup == 'manifests' else '')
+        else:
+          folderpath = pathlib.Path('archive', monitorinfo['config']['type'], monitorinfo['config']['workload'], monitorinfo['config']['origin'], monitorinfo['config']['endpoint'], monitorinfo['config']['technology'], filetypegroup)
         folderpath.mkdir(parents=True, exist_ok=True)
         if binary:
           pass
