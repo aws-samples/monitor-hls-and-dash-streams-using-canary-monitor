@@ -23,5 +23,6 @@
     {% endif %}
     {% set positions = getpositions('header') %},{% include 'widgets/headers/logs' %}
     {% set positions = getpositions('loginsights') %},{% include 'widgets/loginsights/monitor' %}
+    {% set positions = getpositions('loginsights') %},{% include 'widgets/loginsights/service' %}
   ]
 }
