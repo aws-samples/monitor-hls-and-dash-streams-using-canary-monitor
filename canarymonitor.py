@@ -9,6 +9,7 @@ import time
 import re
 import sys
 import json
+import copy
 import os
 import pathlib
 import signal
@@ -83,7 +84,7 @@ def readcsvfile(filename, content, endpoints:dict):
               validentry = False
               break
           if validentry:
-            endpointconfig = defaultendpointconfig.copy()
+            endpointconfig = copy.deepcopy(defaultendpointconfig)
             identifier = (splitline[0].strip().lower(), splitline[1].strip().lower(), splitline[2].strip(), splitline[3].strip(), splitline[4].strip().lower()) # endpoint type, technology, workload name, endpoint name, origin name
             # Get endpoint configuration
             if splitline[5].strip() not in mainconfig['hashtable']['config'].keys():
@@ -438,8 +439,8 @@ def updateworkers():
       if (identifier[0], identifier[2], identifier[4]) not in mainconfig['changedworkloads']:
         mainconfig['changedworkloads'].append((identifier[0], identifier[2], identifier[4]))
       stoppedworkers.append(identifier)
-  # Start workers for new endpoints
   for identifier, endpointconfig in newendpoints.items():
+    # Start workers for new endpoints
     if identifier not in mainconfig['workers']:
       startmonitorworker(identifier, endpointconfig)
       if (identifier[0], identifier[2], identifier[4]) not in mainconfig['changedworkloads']:
@@ -606,7 +607,6 @@ if __name__ == '__main__':
     from deepdiff import DeepDiff
     from jinja2 import Environment, FileSystemLoader, select_autoescape
     from lxml import etree as et
-    import m3u8
   except Exception as e:
     mainlogger.error(f"Exception: {e} Trackeback: {traceback.format_exc()}")
     sys.exit(1)
