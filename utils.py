@@ -189,15 +189,21 @@ def tracking(logger, monitorinfo:dict, endpointconfig:dict):
     while not monitorinfo['state']['stop'].is_set():
       starttime = time.perf_counter()
       if endpointconfig['tracking']['get']:
-        if (endpointconfig['tracking']['playhead'] and 'availabilitystarttime' in monitorinfo['manifest'].keys()) or not endpointconfig['tracking']['playhead']:
-          playhead = round((datetime.now(timezone.utc) - monitorinfo['manifest']['availabilitystarttime']).total_seconds()) - endpointconfig['tracking']['playheaddelay']
-          trackingurl = f"{endpointconfig['trackingurl']}?aws.playheadPositionInSeconds={playhead}" if endpointconfig['tracking']['playhead'] else endpointconfig['trackingurl']
+        trackingurl = ''
+        playhead = 0
+        if endpointconfig['tracking']['playhead']:
+          if 'availabilitystarttime' in monitorinfo['manifest'].keys():
+            playhead = round((datetime.now(timezone.utc) - monitorinfo['manifest']['availabilitystarttime']).total_seconds()) - endpointconfig['tracking']['playheaddelay']
+            trackingurl = f"{endpointconfig['trackingurl']}?aws.playheadPositionInSeconds={playhead}"
+          else:
+            logger.debug(f"Waiting for availabilityStartTime before requesting playhead-aware tracking")
+        else:
+          trackingurl = endpointconfig['trackingurl']
+        if trackingurl:
           logger.debug(f"Requesting tracking")
           response = request(logger, 'GET', trackingurl, 'tracking', '', monitorinfo)
           if endpointconfig['tracking']['save']['local']:
             saveresponse(logger, response, monitorinfo, 'tracking', f"_playhead_{playhead}" if endpointconfig['tracking']['playhead'] else "", False)
-        else:
-          logger.debug(f"Waiting for playhead before requesting playhead-aware tracking")
       wait(logger, starttime, endpointconfig['tracking']['frequency'])
   except Exception as e:
     logger.error(f"Encountered error in tracking thread. Exception: {str(e)} Traceback: {traceback.format_exc()}")
