@@ -356,7 +356,7 @@ def monitor(endpointidentifier:tuple, endpointconfig:dict, stopflag, changeflag,
 
 # Find what endpoint configuration changes were made to know if worked needs to be restarted
 def needtorestartworker(old:dict, new:dict):
-  forbiddenpaths = {"root['manifests']['hlsrenditions']"}
+  forbiddenpaths = {"root['manifests']['hlsrenditions']", "root['manifesturl']", "root['trackingurl']"}
   diff = DeepDiff(old, new)
   if 'values_changed' not in diff:
     return True
