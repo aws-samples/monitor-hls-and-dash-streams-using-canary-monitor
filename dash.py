@@ -109,7 +109,7 @@ def getperiodinfo(logger, xmlperiod, monitorinfo:dict):
         'compact': False,
         'isadbreak': False,
         'spliceinfo': [],
-        'mimetypes': {}
+        'adaptationsets': []
       }
       # Compactness info
       xmladaptationsets = xmlperiod.findall('default:AdaptationSet', ns)
@@ -121,8 +121,12 @@ def getperiodinfo(logger, xmlperiod, monitorinfo:dict):
       # Adaptation set info
       xmladaptationsets = xmlperiod.findall('default:AdaptationSet', ns)
       for xmladaptationset in xmladaptationsets:
-        mimetype = xmladaptationset.get('mimeType', '')
-        periodinfo['mimetypes'][mimetype] = periodinfo['mimetypes'].get(mimetype, 0) + 1
+        xmlrepresentations = xmladaptationset.findall('default:Representation', ns)
+        adaptationset = {
+          'mimetype': xmladaptationset.get('mimeType', ''),
+          'renditions': len(xmlrepresentations)
+        }
+        periodinfo['adaptationsets'].append(adaptationset)
       # Splice info
       xmleventstream = xmlperiod.find('default:EventStream', ns)
       if xmleventstream is not None:
@@ -226,7 +230,12 @@ def getperiodinfo(logger, xmlperiod, monitorinfo:dict):
               utils.addmetric(logger, monitorinfo, 'AvailNum', adbreakinfo['availnum'], 'Count', [{'Name': 'AdBreakType', 'Value': adbreakinfo['type']}])
       # Update manifest period information
       monitorinfo['manifest']['primary']['periods'][xmlperiodid] = periodinfo
-      logger.debug(f"Found {'new ' if monitorinfo['manifest']['primary']['foundlastsegment'] else ''}period {xmlperiodid}: compact={periodinfo['compact']}, adaptation set mime types={periodinfo['mimetypes']}, adbreak={periodinfo['isadbreak']}{', type=' + adbreakinfo['type'] if 'type' in adbreakinfo.keys() else ''}{', spliceinfo=' + str(periodinfo['spliceinfo']) if len(periodinfo['spliceinfo']) > 0 else ''}")
+      logger.debug(f"Found {'new ' if monitorinfo['manifest']['primary']['foundlastsegment'] else ''}period {xmlperiodid}: compact={periodinfo['compact']}, adbreak={periodinfo['isadbreak']}{', type=' + adbreakinfo['type'] if 'type' in adbreakinfo.keys() else ''}{', spliceinfo=' + str(periodinfo['spliceinfo']) if len(periodinfo['spliceinfo']) > 0 else ''}, adaptation sets={periodinfo['adaptationsets']}")
+      # Validate required renditions
+      for requiredrendition in monitorinfo['config']['endpointconfig']['validations']['custom']['requiredrenditions']:
+        found = any(item['mimetype'].startswith(requiredrendition) for item in periodinfo['adaptationsets'])
+        if not found:
+          logger.warning(f"Missing {requiredrendition} rendition")
     except Exception as e:
       logger.error(f"Error getting period information. Exception: {str(e)} Traceback: {traceback.format_exc()}")
   else:

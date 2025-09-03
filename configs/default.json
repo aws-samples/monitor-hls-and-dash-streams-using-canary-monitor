@@ -19,6 +19,9 @@
     "playheaddelay": 10
   },
   "validations": {
-    "perform": true
+    "perform": true,
+    "custom": {
+      "requiredrenditions": [ "video", "audio" ]
+    }
   }
 }

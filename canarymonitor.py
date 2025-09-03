@@ -19,7 +19,6 @@ from datetime import datetime, timezone
 import random
 import platform
 import shutil
-from urllib.parse import urljoin
 from queue import Queue
 import utils
 import dash
@@ -357,14 +356,15 @@ def monitor(endpointidentifier:tuple, endpointconfig:dict, stopflag, changeflag,
 
 # Find what endpoint configuration changes were made to know if worked needs to be restarted
 def needtorestartworker(old:dict, new:dict):
-  allowedpaths = {"root['cwmetrics']", "root['manifests']['frequency']", "root['manifests']['save']['local']", "root['tracking']['frequency']", "root['tracking']['get']", "root['tracking']['save']['local']", "root['tracking']['playhead']", "root['tracking']['playheaddelay']", "root['loglevel']"}
+  forbiddenpaths = {"root['manifests']['hlsrenditions']"}
   diff = DeepDiff(old, new)
   if 'values_changed' not in diff:
     return True
   else:
-    if len(diff.keys()) == 1 and all(path in allowedpaths for path in diff['values_changed']):
+    if any(path in forbiddenpaths for path in diff['values_changed']):
+      return True
+    else:
       return False
-    return True
 
 
 # Stop or start new monitor workers after any input or config change
