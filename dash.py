@@ -108,7 +108,8 @@ def getperiodinfo(logger, xmlperiod, monitorinfo:dict):
         'observed': observetime,
         'compact': False,
         'isadbreak': False,
-        'spliceinfo': []
+        'spliceinfo': [],
+        'mimetypes': {}
       }
       # Compactness info
       xmladaptationsets = xmlperiod.findall('default:AdaptationSet', ns)
@@ -117,6 +118,11 @@ def getperiodinfo(logger, xmlperiod, monitorinfo:dict):
         if xmlsegmenttemplate is not None and xmlsegmenttemplate.find('default:SegmentTimeline', ns) is not None:
           periodinfo['compact'] = True
           break
+      # Adaptation set info
+      xmladaptationsets = xmlperiod.findall('default:AdaptationSet', ns)
+      for xmladaptationset in xmladaptationsets:
+        mimetype = xmladaptationset.get('mimeType', '')
+        periodinfo['mimetypes'][mimetype] = periodinfo['mimetypes'].get(mimetype, 0) + 1
       # Splice info
       xmleventstream = xmlperiod.find('default:EventStream', ns)
       if xmleventstream is not None:
@@ -220,7 +226,7 @@ def getperiodinfo(logger, xmlperiod, monitorinfo:dict):
               utils.addmetric(logger, monitorinfo, 'AvailNum', adbreakinfo['availnum'], 'Count', [{'Name': 'AdBreakType', 'Value': adbreakinfo['type']}])
       # Update manifest period information
       monitorinfo['manifest']['primary']['periods'][xmlperiodid] = periodinfo
-      logger.debug(f"Found {'new ' if monitorinfo['manifest']['primary']['foundlastsegment'] else ''}period {xmlperiodid}: compact={periodinfo['compact']}, adbreak={periodinfo['isadbreak']}{', type=' + adbreakinfo['type'] if 'type' in adbreakinfo.keys() else ''}{', spliceinfo=' + str(periodinfo['spliceinfo']) if len(periodinfo['spliceinfo']) > 0 else ''}")
+      logger.debug(f"Found {'new ' if monitorinfo['manifest']['primary']['foundlastsegment'] else ''}period {xmlperiodid}: compact={periodinfo['compact']}, adaptation set mime types={periodinfo['mimetypes']}, adbreak={periodinfo['isadbreak']}{', type=' + adbreakinfo['type'] if 'type' in adbreakinfo.keys() else ''}{', spliceinfo=' + str(periodinfo['spliceinfo']) if len(periodinfo['spliceinfo']) > 0 else ''}")
     except Exception as e:
       logger.error(f"Error getting period information. Exception: {str(e)} Traceback: {traceback.format_exc()}")
   else:

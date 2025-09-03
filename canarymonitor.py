@@ -208,65 +208,6 @@ def publishmetrics(logger, monitorinfo):
     logger.error(f"Error publishing metrics. Exception: {str(e)}")
 
 
-# Get HLS rendition info from multivariant manifest
-def getrenditions(logger, responsedata: str, monitorinfo: dict):
-  renditions = {'v': [], 'a': [], 's': []}
-  vuris = []
-  auris = []
-  suris = []
-  try:
-    # Get all renditions for manifest
-    multiplaylist = m3u8.loads(responsedata)
-    for playlist in multiplaylist.playlists:
-      if playlist.uri and playlist.uri not in vuris:
-        vuris.append(playlist.uri)
-        renditions['v'].append({'id': f"v{len(vuris)}", 'monitor': False, 'bandwidth': playlist.stream_info.bandwidth, 'url': urljoin(monitorinfo['manifest']['url'], playlist.uri)})
-    for media in multiplaylist.media:
-      if media.type == 'AUDIO':
-        if media.uri and media.uri not in auris:
-          auris.append(media.uri)
-          renditions['a'].append({'id': f"a{len(auris)}", 'monitor': False, 'groupid': media.group_id, 'url': urljoin(monitorinfo['manifest']['url'], media.uri)})
-      elif media.type == 'SUBTITLES':
-        if media.uri and media.uri not in suris:
-          suris.append(media.uri)
-          renditions['s'].append({'id': f"s{len(suris)}", 'monitor': False, 'groupid': media.group_id, 'url': urljoin(monitorinfo['manifest']['url'], media.uri)})
-    # Mark renditions for monitoring
-    for renditionstring in args.renditions:
-      foundrendition = False
-      match = re.search(r'^([vas])(\d+|\*)$', renditionstring)
-      if match:
-        for rendition in renditions[match.group(1)]:
-          if renditionstring == rendition['id'] or match.group(2) == '*':
-            rendition['monitor'] = True
-            foundrendition = True
-      if not foundrendition:
-        logger.warning(f"Failed finding user selected rendition {renditionstring}")
-  except Exception as e:
-    logger.error(f"Error parsing manifest. Exception: {str(e)}")
-  logger.debug(f"Found these renditions: {renditions}")
-  return renditions
-
-
-# HLS rendition monitor
-def hlsmonitor(monitorinfo: dict, rendition: dict, loggingconfig: dict):
-  logging.config.dictConfig(loggingconfig)
-  monitorlogger = logging.getLogger('monitor')
-  logger = logging.LoggerAdapter(monitorlogger, {'type': monitorinfo['type'], 'origin': monitorinfo['origin'], 'endpoint': monitorinfo['endpoint'], 'technology': monitorinfo['technology'], 'rendition': rendition['id']})
-  rendition.update({'status': 'initializing', 'lastmanifesthash': ''})
-  metricstopublish = {}
-  logger.info(f"Started monitoring")
-  try:
-    while not monitorinfo['stop'].is_set():
-      starttime = time.perf_counter()
-      logger.debug(f"Requesting manifest")
-      # response, responsehash = request(logger, 'GET', rendition['url'], 'manifest', metricstopublish)
-      utils.wait(logger, starttime, args.liveinterval)
-  except KeyboardInterrupt:
-    pass
-  finally:
-    logger.info(f"Stopped monitoring")
-
-
 # Update worker settings
 def updateendpointconfig(logger, endpointinfofile:str, endpointidentifier:tuple, endpointconfig:dict):
   try:
