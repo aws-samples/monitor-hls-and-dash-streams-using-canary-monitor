@@ -220,11 +220,6 @@ def updateendpointconfig(logger, endpointinfofile:str, endpointidentifier:tuple,
   except Exception as e:
     logger.error(f"Error updating worker endpoint configuration. Exception: {str(e)} Traceback: {traceback.format_exc()}")
 
-def clearup(monitorinfo:dict):
-  monitorinfo['manifest']['primary']['foundlastsegment'] = False
-  monitorinfo['manifest']['primary']['new']['segments'].clear()
-  monitorinfo['manifest']['primary']['new']['duration'] = 0.0
-
 
 # Monitor endpoint
 def monitor(endpointidentifier:tuple, endpointconfig:dict, stopflag, changeflag, endpointinfofile, sharedwithmain, loggingconfig:dict, args):
@@ -305,6 +300,12 @@ def monitor(endpointidentifier:tuple, endpointconfig:dict, stopflag, changeflag,
       if changeflag.is_set():
         updateendpointconfig(logger, endpointinfofile, endpointidentifier, endpointconfig)
         changeflag.clear()
+      # Clear state
+      if monitorinfo['config']['technology'] == 'dash':
+        monitorinfo['manifest']['primary']['foundlastsegment'] = False
+        monitorinfo['manifest']['primary']['new']['segments'].clear()
+        monitorinfo['manifest']['primary']['new']['duration'] = 0
+      # Request manifest
       logger.debug(f"Requesting manifest")
       response = utils.request(logger, 'GET', endpointconfig['manifesturl'], 'manifest', 'multi', monitorinfo)
       # Save manifest response
@@ -312,7 +313,6 @@ def monitor(endpointidentifier:tuple, endpointconfig:dict, stopflag, changeflag,
         utils.saveresponse(logger, response, monitorinfo, 'manifests', "", False)
       if monitorinfo['config']['type'] == 'live':
         if response:
-          clearup(monitorinfo)
           if monitorinfo['config']['technology'] == 'hls':
             manifesthash = hashlib.md5(utils.decoderesponse(response, False)).hexdigest()
             if manifesthash != monitorinfo['manifest']['multi']['lasthash']:

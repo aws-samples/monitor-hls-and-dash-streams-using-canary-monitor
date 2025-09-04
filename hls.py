@@ -7,33 +7,51 @@ import threading
 import time
 import re
 
-def getmetadatatags(logger, responselines):
-  metadata = {}
+
+def parsetag(logger, tag, value):
+  try:
+    if tag == 'EXTINF':
+      return {tag: float(value.rstrip(','))}
+    else:
+      return {tag: value}
+  except Exception as e:
+    logger.error(f"Error parsing tag '{tag}' with value '{value}'. Exception: {str(e)} Traceback: {traceback.format_exc()}")
+
+
+def getmetadatatags(logger, renditionalias, responselines, monitorinfo:dict):
   try:
     for line in responselines:
       line = line.strip()
       if line.startswith('#'):
-        if ':' in line:
-          tag, value = line[1:].split(':', 1)
-          metadata[tag] = int(value) if re.fullmatch(r"-?\d+", value) else value
+        tag, value = (line[1:].split(':', 1)) if ':' in line else (line[1:], None)
+        if tag == 'EXT-X-MEDIA-SEQUENCE' and value and re.fullmatch(r"-?\d+", value):
+          monitorinfo['manifest'][renditionalias]['mediasequence'] = int(value)
       else:
         break
-    return metadata
   except Exception as e:
     logger.error(f"Error getting metadata tags. Exception: {str(e)} Traceback: {traceback.format_exc()}")
     raise
 
 
-def getsegmentinfo(logger, responselines, monitorinfo:dict, allsegments):
+def getsegmentinfo(logger, renditionalias, responselines, monitorinfo:dict, allsegments:bool=False):
   try:
+    mediasequence = monitorinfo['manifest'][renditionalias]['mediasequence']
+    tags = []
     for line in responselines:
       line = line.strip()
       if line.startswith('#'):
-        pass
-      else:
-        pass
+        tag, value = (line[1:].split(':', 1)) if ':' in line else (line[1:], None)
+        tags.append(parsetag(logger, tag, value))
+      elif line:
+        if monitorinfo['manifest'][renditionalias]['foundlastsegment'] or allsegments:
+          segment = {
+            'mediasequence': mediasequence,
+            'tags': tags.copy()
+          }
+          mediasequence += 1
+          tags.clear()
   except Exception as e:
-    logger.error(f"Error getting metadata tags. Exception: {str(e)} Traceback: {traceback.format_exc()}")
+    logger.error(f"Error getting segment info. Exception: {str(e)} Traceback: {traceback.format_exc()}")
 
 
 def monitor(renditionid, url:str, rendition:dict, monitorinfo:dict, primary:bool):
@@ -43,9 +61,35 @@ def monitor(renditionid, url:str, rendition:dict, monitorinfo:dict, primary:bool
   if monitorinfo['config']['endpointconfig']['loglevel'] in utils.loglevels.keys():
     logger.setLevel(utils.loglevels[monitorinfo['config']['endpointconfig']['loglevel']])
   logger.info(f"Started monitoring origin endpoint {url}")
+  renditionalias = 'primary' if primary else renditionid
+  monitorinfo['manifest'][renditionalias] = {
+    'mediasequence': 0,
+    'playhead': None,
+    'foundlastsegment': False,
+    'adbreaks': {},
+    'headers': {
+      'manifestlastupdated': 0
+    },
+    'new': {
+      'segments': [],
+      'duration': 0
+    },
+    'last': {
+      'segment': {}
+    },
+    'buffer': {
+      'window': {},
+      'size': 20.0
+    }
+  }
   try:
     while not monitorinfo['state']['stop'].is_set():
       requesttime = time.perf_counter()
+      # Clear state
+      monitorinfo['manifest'][renditionalias]['foundlastsegment'] = False
+      monitorinfo['manifest'][renditionalias]['new']['segments'].clear()
+      monitorinfo['manifest'][renditionalias]['new']['duration'] = 0
+      # Request manifest
       logger.debug(f"Requesting manifest")
       response = utils.request(logger, 'GET', url, 'manifest', renditionid, monitorinfo)
       # Save manifest response
@@ -53,14 +97,14 @@ def monitor(renditionid, url:str, rendition:dict, monitorinfo:dict, primary:bool
         utils.saveresponse(logger, response, monitorinfo, 'manifests', "", False, renditionid)
       if monitorinfo['config']['endpointconfig']['validations']['perform']:
         manifestlastupdated = utils.getmanifestlastupdated(response)
-        if manifestlastupdated != monitorinfo['manifest']['primary']['headers']['manifestlastupdated'] or manifestlastupdated == 0:
+        if manifestlastupdated != monitorinfo['manifest'][renditionalias]['headers']['manifestlastupdated'] or manifestlastupdated == 0:
           responselines = utils.decoderesponse(response, True).splitlines()
-          metadatatags = getmetadatatags(logger, responselines)
-          if not monitorinfo['manifest']['primary']['last']['segment']:
-            getsegmentinfo(logger, responselines, monitorinfo, True)
+          getmetadatatags(logger, renditionalias, responselines, monitorinfo)
+          if not monitorinfo['manifest'][renditionalias]['last']['segment']:
+            getsegmentinfo(logger, renditionalias, responselines, monitorinfo, True)
           else:
-            pass
-        monitorinfo['manifest']['primary']['headers']['manifestlastupdated'] = manifestlastupdated
+            getsegmentinfo(logger, renditionalias, responselines, monitorinfo)
+        monitorinfo['manifest'][renditionalias]['headers']['manifestlastupdated'] = manifestlastupdated
       utils.wait(logger, requesttime, monitorinfo['config']['endpointconfig']['manifests']['frequency'])
   except Exception as e:
     logger.error(f"Encountered error while monitoring. Exception: {str(e)} Traceback: {traceback.format_exc()}")
@@ -128,7 +172,7 @@ def startthreads(logger, monitorinfo:dict, response):
     logger.error(f"Error starting threads. Exception: {str(e)} Traceback: {traceback.format_exc()}")
 
 
-# Start new HLS monitoring treads
+# Stop and start new HLS monitoring treads
 def restartthreads(logger, monitorinfo:dict, response):
   try:
     if monitorinfo['manifest']['multi']['lasthash']:
