@@ -268,7 +268,7 @@ def tracking(logger, monitorinfo:dict, endpointconfig:dict):
     logger.info(f"Stopped tracking thread")
 
 
-def checkforstaleness(logger, monitorinfo:dict, requesttime, renditionalias, rendition):
+def checkforstaleness(logger, monitorinfo:dict, requesttime, renditionalias, renditionid):
   durationsum = 0
   todelete = []
   try:
@@ -280,7 +280,7 @@ def checkforstaleness(logger, monitorinfo:dict, requesttime, renditionalias, ren
         todelete.append(timestamp)
     for timestamp in todelete:
       del monitorinfo['manifest'][renditionalias]['buffer']['window'][timestamp]
-    addmetric(logger, monitorinfo, 'BufferFillDuration', durationsum, 'Seconds', [{'Name': 'Rendition', 'Value': rendition}])
+    addmetric(logger, monitorinfo, 'BufferFillDuration', durationsum, 'Seconds', [{'Name': 'Rendition', 'Value': renditionid}])
     if durationsum == 0:
       logger.warning(f"Stale manifest")
   except Exception as e:

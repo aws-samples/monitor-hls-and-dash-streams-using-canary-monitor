@@ -289,7 +289,7 @@ def gothroughnewsegments(logger, monitorinfo:dict):
         # Check for discontinuity
         if segment['t'] != monitorinfo['manifest']['primary']['last']['segment']['nextt']:
           logger.warning(f"Discontinuity")
-          utils.addmetric(logger, monitorinfo, 'Discontinuity', 1, 'Count', [])
+          utils.addmetric(logger, monitorinfo, 'Discontinuity', 1, 'Count', [{'Name': 'Rendition', 'Value': "multi"}])
         # Update last segment
         monitorinfo['manifest']['primary']['last']['segment'] = segment.copy()
       # Update last period

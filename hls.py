@@ -44,7 +44,7 @@ def getsegmentinfo(logger, renditionalias, responselines, monitorinfo:dict, alls
       line = line.strip()
       if line.startswith('#'):
         tag, value = (line[1:].split(':', 1)) if ':' in line else (line[1:], '')
-        tags.append({tag: value})
+        tags.append((tag, value))
         if tag == 'EXTINF' and value:
           match = re.match(r'^\d*\.?\d+', value)
           if match:
@@ -68,12 +68,17 @@ def getsegmentinfo(logger, renditionalias, responselines, monitorinfo:dict, alls
     logger.error(f"Error getting segment info. Exception: {str(e)} Traceback: {traceback.format_exc()}")
 
 
-def gothroughsegments(logger, renditionalias, monitorinfo:dict, new:bool=False):
+def gothroughsegments(logger, renditionalias, renditionid, monitorinfo:dict, new:bool=False):
   try:
     for segment in monitorinfo['manifest'][renditionalias]['new']['segments']:
       if new:
         # Update new segments duration
         monitorinfo['manifest'][renditionalias]['new']['duration'] = monitorinfo['manifest'][renditionalias]['new']['duration'] + segment['dsec']
+        # Go through segment tags
+        for tag, value in segment['tags']:
+          if tag == 'EXT-X-DISCONTINUITY':
+            logger.warning(f"Discontinuity")
+            utils.addmetric(logger, monitorinfo, 'Discontinuity', 1, 'Count', [{'Name': 'Rendition', 'Value': renditionid}])
       # Update last segment
       monitorinfo['manifest'][renditionalias]['last']['segment'] = segment.copy()
       # Update content duration since start
@@ -116,10 +121,10 @@ def monitor(renditionid, url:str, rendition:dict, monitorinfo:dict, primary:bool
           getmetadatatags(logger, renditionalias, responselines, monitorinfo)
           if not monitorinfo['manifest'][renditionalias]['last']['segment']:
             getsegmentinfo(logger, renditionalias, responselines, monitorinfo, True)
-            gothroughsegments(logger, renditionalias, monitorinfo)
+            gothroughsegments(logger, renditionalias, renditionid, monitorinfo)
           else:
             getsegmentinfo(logger, renditionalias, responselines, monitorinfo)
-            gothroughsegments(logger, renditionalias, monitorinfo, True)
+            gothroughsegments(logger, renditionalias, renditionid, monitorinfo, True)
         monitorinfo['manifest'][renditionalias]['headers']['manifestlastupdated'] = manifestlastupdated
       # Check for staleness
       monitorinfo['manifest'][renditionalias]['buffer']['window'][requesttime] = monitorinfo['manifest'][renditionalias]['new']['duration']
