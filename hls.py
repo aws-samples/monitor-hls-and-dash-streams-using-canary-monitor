@@ -11,7 +11,9 @@ import re
 def parsetag(logger, tag, value):
   try:
     if tag == 'EXTINF':
-      return {tag: float(value.rstrip(','))}
+      match = re.match(r'^\d*\.?\d+', value)
+      if match:
+        return {tag: float(match.group())}
     else:
       return {tag: value}
   except Exception as e:
@@ -36,22 +38,52 @@ def getmetadatatags(logger, renditionalias, responselines, monitorinfo:dict):
 def getsegmentinfo(logger, renditionalias, responselines, monitorinfo:dict, allsegments:bool=False):
   try:
     mediasequence = monitorinfo['manifest'][renditionalias]['mediasequence']
+    segmentduration = None
     tags = []
     for line in responselines:
       line = line.strip()
       if line.startswith('#'):
-        tag, value = (line[1:].split(':', 1)) if ':' in line else (line[1:], None)
-        tags.append(parsetag(logger, tag, value))
+        tag, value = (line[1:].split(':', 1)) if ':' in line else (line[1:], '')
+        tags.append({tag: value})
+        if tag == 'EXTINF' and value:
+          match = re.match(r'^\d*\.?\d+', value)
+          if match:
+            segmentduration = float(match.group())
       elif line:
         if monitorinfo['manifest'][renditionalias]['foundlastsegment'] or allsegments:
           segment = {
-            'mediasequence': mediasequence,
+            'msn': mediasequence,
+            'dsec': round(segmentduration, 3),
             'tags': tags.copy()
           }
-          mediasequence += 1
-          tags.clear()
+          monitorinfo['manifest'][renditionalias]['new']['segments'].append(segment)
+          if not allsegments:
+            logger.debug(f"Found new segment: {segment}")
+        elif not allsegments:
+          if mediasequence == monitorinfo['manifest'][renditionalias]['last']['segment']['msn']:
+            monitorinfo['manifest'][renditionalias]['foundlastsegment'] = True
+        mediasequence += 1
+        tags.clear()
   except Exception as e:
     logger.error(f"Error getting segment info. Exception: {str(e)} Traceback: {traceback.format_exc()}")
+
+
+def gothroughsegments(logger, renditionalias, monitorinfo:dict, new:bool=False):
+  try:
+    for segment in monitorinfo['manifest'][renditionalias]['new']['segments']:
+      if new:
+        # Update new segments duration
+        monitorinfo['manifest'][renditionalias]['new']['duration'] = monitorinfo['manifest'][renditionalias]['new']['duration'] + segment['dsec']
+      # Update last segment
+      monitorinfo['manifest'][renditionalias]['last']['segment'] = segment.copy()
+      # Update content duration since start
+      if renditionalias == 'primary':
+        monitorinfo['manifest']['primary']['contentdurationsincestart'] = monitorinfo['manifest']['primary'].setdefault('contentdurationsincestart', 0) + segment['dsec']
+    if new and not monitorinfo['manifest'][renditionalias]['foundlastsegment']:
+      logger.warning(f"Last segment not found")
+  except Exception as e:
+    logger.error(f"Error going through segments. Exception: {str(e)} Traceback: {traceback.format_exc()}")
+
 
 
 def monitor(renditionid, url:str, rendition:dict, monitorinfo:dict, primary:bool):
@@ -62,26 +94,7 @@ def monitor(renditionid, url:str, rendition:dict, monitorinfo:dict, primary:bool
     logger.setLevel(utils.loglevels[monitorinfo['config']['endpointconfig']['loglevel']])
   logger.info(f"Started monitoring origin endpoint {url}")
   renditionalias = 'primary' if primary else renditionid
-  monitorinfo['manifest'][renditionalias] = {
-    'mediasequence': 0,
-    'playhead': None,
-    'foundlastsegment': False,
-    'adbreaks': {},
-    'headers': {
-      'manifestlastupdated': 0
-    },
-    'new': {
-      'segments': [],
-      'duration': 0
-    },
-    'last': {
-      'segment': {}
-    },
-    'buffer': {
-      'window': {},
-      'size': 20.0
-    }
-  }
+  utils.initializemonitor(monitorinfo, 'hls', renditionalias)
   try:
     while not monitorinfo['state']['stop'].is_set():
       requesttime = time.perf_counter()
@@ -95,6 +108,7 @@ def monitor(renditionid, url:str, rendition:dict, monitorinfo:dict, primary:bool
       # Save manifest response
       if monitorinfo['config']['endpointconfig']['manifests']['save']['local']:
         utils.saveresponse(logger, response, monitorinfo, 'manifests', "", False, renditionid)
+      # Perform validations
       if monitorinfo['config']['endpointconfig']['validations']['perform']:
         manifestlastupdated = utils.getmanifestlastupdated(response)
         if manifestlastupdated != monitorinfo['manifest'][renditionalias]['headers']['manifestlastupdated'] or manifestlastupdated == 0:
@@ -102,9 +116,16 @@ def monitor(renditionid, url:str, rendition:dict, monitorinfo:dict, primary:bool
           getmetadatatags(logger, renditionalias, responselines, monitorinfo)
           if not monitorinfo['manifest'][renditionalias]['last']['segment']:
             getsegmentinfo(logger, renditionalias, responselines, monitorinfo, True)
+            gothroughsegments(logger, renditionalias, monitorinfo)
           else:
             getsegmentinfo(logger, renditionalias, responselines, monitorinfo)
+            gothroughsegments(logger, renditionalias, monitorinfo, True)
         monitorinfo['manifest'][renditionalias]['headers']['manifestlastupdated'] = manifestlastupdated
+      # Check for staleness
+      monitorinfo['manifest'][renditionalias]['buffer']['window'][requesttime] = monitorinfo['manifest'][renditionalias]['new']['duration']
+      if requesttime - monitorinfo['state']['starttimeperf'] > max(monitorinfo['manifest'][renditionalias]['buffer']['size'], monitorinfo['config']['endpointconfig']['manifests']['frequency']):
+        utils.checkforstaleness(logger, monitorinfo, requesttime, renditionalias, renditionid)
+      # Wait
       utils.wait(logger, requesttime, monitorinfo['config']['endpointconfig']['manifests']['frequency'])
   except Exception as e:
     logger.error(f"Encountered error while monitoring. Exception: {str(e)} Traceback: {traceback.format_exc()}")

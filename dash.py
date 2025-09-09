@@ -307,7 +307,7 @@ def getavailabilitystarttime(logger, xmlroot, monitorinfo:dict):
     if xmlavailabilitystarttime:
       if xmlavailabilitystarttime.endswith('Z'):
         xmlavailabilitystarttime = xmlavailabilitystarttime[:-1] + '+00:00'
-      monitorinfo['manifest']['availabilitystarttime'] = datetime.fromisoformat(xmlavailabilitystarttime)
+      monitorinfo['manifest']['primary']['availabilitystarttime'] = datetime.fromisoformat(xmlavailabilitystarttime)
     else:
       logger.warning(f"Missing availabilityStartTime in manifest")
   except Exception as e:

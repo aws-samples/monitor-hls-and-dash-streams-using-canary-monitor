@@ -55,7 +55,7 @@ Common dimensions for all metrics are `Type`, `Technology`, `Workload`, `Endpoin
 | Domain    | Metric Name        | Additional Metric Dimensions   | Description                                                                                                                                 |
 |-----------|--------------------|--------------------------------|---------------------------------------------------------------------------------------------------------------------------------------------|
 | Manifests | Discontinuity      |                                | Discontinuity in segments timeline                                                                                                          |
-| Manifests | BufferFillDuration |                                | Sum of new segment durations in a rolling 20 seconds time window                                                                            |
+| Manifests | BufferFillDuration | Rendition                      | Sum of new segment durations in a rolling 20 seconds time window                                                                            |
 | Manifests | Latency            | RequestType, Rendition         | HTTP request latency in milliseconds                                                                                                        |
 | Manifests | Request            | RequestType, Rendition, Status | HTTP request response with "Status" dimension one of "4xx", "5xx" or "failure"                                                              |
 | Tracking  | Latency            | RequestType                    | HTTP request latency in milliseconds                                                                                                        |

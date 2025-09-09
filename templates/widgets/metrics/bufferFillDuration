@@ -8,7 +8,13 @@
     "metrics": [
       {% set ns = namespace(count = 0) %}
       {% for endpoint in renderinfo['endpoints'] %}
-        {% if ns.count > 0 %}, {% endif %}[ "CanaryMonitor", "BufferFillDuration", "Origin", "{{renderinfo['origin']}}", "Type", "{{renderinfo['type']}}", "Endpoint", "{{endpoint['endpoint']}}", "Technology", "{{endpoint['technology']}}", "Workload", "{{renderinfo['workload']}}"]{% set ns.count = ns.count + 1 %}
+        {% if endpoint['technology'] == 'hls' %}
+          {% for rendition in endpoint['renditions'] %}
+            {% if ns.count > 0 %}, {% endif %}[ "CanaryMonitor", "BufferFillDuration", "Origin", "{{renderinfo['origin']}}", "Type", "{{renderinfo['type']}}", "Endpoint", "{{endpoint['endpoint']}}", "Technology", "{{endpoint['technology']}}", "Rendition", "{{rendition}}", "Workload", "{{renderinfo['workload']}}"]{% set ns.count = ns.count + 1 %}
+          {% endfor %}
+        {% elif endpoint['technology'] == 'dash' %}
+          {% if ns.count > 0 %}, {% endif %}[ "CanaryMonitor", "BufferFillDuration", "Origin", "{{renderinfo['origin']}}", "Type", "{{renderinfo['type']}}", "Endpoint", "{{endpoint['endpoint']}}", "Technology", "{{endpoint['technology']}}", "Rendition", "multi", "Workload", "{{renderinfo['workload']}}"]{% set ns.count = ns.count + 1 %}
+        {% endif %}
       {% endfor %}
     ],
     "view": "timeSeries",

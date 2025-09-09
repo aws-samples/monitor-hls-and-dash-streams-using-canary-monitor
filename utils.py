@@ -174,6 +174,56 @@ def saveresponse(logger, response, monitorinfo:dict, filetypegroup:str, filename
     logger.error(f"Error saving response. Exception: {str(e)} Traceback: {traceback.format_exc()}")
 
 
+def initializemonitor(monitorinfo:dict, technology:str, renditionalias:str=''):
+  if technology == 'dash':
+    monitorinfo.update({
+      'manifest': {
+        'primary': {
+          'foundlastsegment': False,
+          'adbreaks': {},
+          'periods': {},
+          'headers': {
+            'manifestlastupdated': 0
+          },
+          'new': {
+            'segments': {},
+            'duration': 0
+          },
+          'last': {
+            'segment': {},
+            'period': ''
+          },
+          'buffer': {
+            'window': {},
+            'size': 20.0
+          }
+        }
+      }
+    })
+  elif technology == 'hls':
+    monitorinfo['manifest'].update({
+      renditionalias: {
+        'mediasequence': 0,
+        'foundlastsegment': False,
+        'adbreaks': {},
+        'headers': {
+          'manifestlastupdated': 0
+        },
+        'new': {
+          'segments': [],
+          'duration': 0
+        },
+        'last': {
+          'segment': {}
+        },
+        'buffer': {
+          'window': {},
+          'size': 20.0
+        }
+      }
+    })
+
+
 # Wait for a certain time
 def wait(logger, starttime:float, duration:float):
   waittime = starttime - time.perf_counter() + duration
@@ -192,11 +242,18 @@ def tracking(logger, monitorinfo:dict, endpointconfig:dict):
         trackingurl = ''
         playhead = 0
         if endpointconfig['tracking']['playhead']:
-          if 'availabilitystarttime' in monitorinfo['manifest'].keys():
-            playhead = round((datetime.now(timezone.utc) - monitorinfo['manifest']['availabilitystarttime']).total_seconds()) - endpointconfig['tracking']['playheaddelay']
-            trackingurl = f"{endpointconfig['trackingurl']}?aws.playheadPositionInSeconds={playhead}"
-          else:
-            logger.debug(f"Waiting for availabilityStartTime before requesting playhead-aware tracking")
+          if monitorinfo['config']['technology'] == 'dash':
+            if 'availabilitystarttime' in monitorinfo['manifest']['primary'].keys():
+              playhead = round((datetime.now(timezone.utc) - monitorinfo['manifest']['primary']['availabilitystarttime']).total_seconds()) - endpointconfig['tracking']['playheaddelay']
+              trackingurl = f"{endpointconfig['trackingurl']}?aws.playheadPositionInSeconds={playhead}"
+            else:
+              logger.debug(f"Waiting for availabilityStartTime before requesting playhead-aware tracking")
+          elif monitorinfo['config']['technology'] == 'hls':
+            if 'primary' in monitorinfo['manifest'].keys() and 'contentdurationsincestart' in monitorinfo['manifest']['primary'].keys():
+              playhead = round(monitorinfo['manifest']['primary']['contentdurationsincestart'] - endpointconfig['tracking']['playheaddelay'])
+              trackingurl = f"{endpointconfig['trackingurl']}?aws.playheadPositionInSeconds={playhead}"
+            else:
+              logger.debug(f"Waiting for content duration before requesting playhead-aware tracking")
         else:
           trackingurl = endpointconfig['trackingurl']
         if trackingurl:
@@ -211,19 +268,19 @@ def tracking(logger, monitorinfo:dict, endpointconfig:dict):
     logger.info(f"Stopped tracking thread")
 
 
-def checkforstaleness(logger, monitorinfo:dict, requesttime):
+def checkforstaleness(logger, monitorinfo:dict, requesttime, renditionalias, rendition):
   durationsum = 0
   todelete = []
   try:
-    bufferlength = len(monitorinfo['manifest']['primary']['buffer']['window'])
-    for timestamp, duration in monitorinfo['manifest']['primary']['buffer']['window'].items():
-      if timestamp > requesttime - monitorinfo['manifest']['primary']['buffer']['size'] or bufferlength == 1:
+    bufferlength = len(monitorinfo['manifest'][renditionalias]['buffer']['window'])
+    for timestamp, duration in monitorinfo['manifest'][renditionalias]['buffer']['window'].items():
+      if timestamp > requesttime - monitorinfo['manifest'][renditionalias]['buffer']['size'] or bufferlength == 1:
         durationsum = durationsum + duration
       else:
         todelete.append(timestamp)
     for timestamp in todelete:
-      del monitorinfo['manifest']['primary']['buffer']['window'][timestamp]
-    addmetric(logger, monitorinfo, 'BufferFillDuration', durationsum, 'Seconds', [])
+      del monitorinfo['manifest'][renditionalias]['buffer']['window'][timestamp]
+    addmetric(logger, monitorinfo, 'BufferFillDuration', durationsum, 'Seconds', [{'Name': 'Rendition', 'Value': rendition}])
     if durationsum == 0:
       logger.warning(f"Stale manifest")
   except Exception as e:

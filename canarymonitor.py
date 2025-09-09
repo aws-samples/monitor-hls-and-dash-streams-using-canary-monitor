@@ -250,34 +250,16 @@ def monitor(endpointidentifier:tuple, endpointconfig:dict, stopflag, changeflag,
     'reporting': {
       'lastsavetime': time.perf_counter() - random.uniform(0,15),
       'saveinterval': 15
-    },
-    'manifest': {
-      'primary': {
-        'playhead': None,
-        'foundlastsegment': False,
-        'adbreaks': {},
-        'periods': {},
-        'headers': {
-          'manifestlastupdated': 0
-        },
-        'new': {
-          'segments': {},
-          'duration': 0
-        },
-        'last': {
-          'segment': {},
-          'period': ''
-        },
-        'buffer': {
-          'window': {},
-          'size': 20.0
-        }
-      },
+    }
+  }
+  if monitorinfo['config']['technology'] == 'dash':
+    utils.initializemonitor(monitorinfo, 'dash')
+  elif monitorinfo['config']['technology'] == 'hls':
+    monitorinfo['manifest'] = {
       'multi': {
         'lasthash': ''
       }
     }
-  }
   # Configure logging
   logging.config.dictConfig(loggingconfig)
   monitorlogger = logging.getLogger('monitor')
@@ -312,22 +294,27 @@ def monitor(endpointidentifier:tuple, endpointconfig:dict, stopflag, changeflag,
       if endpointconfig['manifests']['save']['local']:
         utils.saveresponse(logger, response, monitorinfo, 'manifests', "", False)
       if monitorinfo['config']['type'] == 'live':
-        if response:
-          if monitorinfo['config']['technology'] == 'hls':
-            manifesthash = hashlib.md5(utils.decoderesponse(response, False)).hexdigest()
-            if manifesthash != monitorinfo['manifest']['multi']['lasthash']:
-              hls.restartthreads(logger, monitorinfo, utils.decoderesponse(response, True))
-            monitorinfo['manifest']['multi']['lasthash'] = manifesthash
-          elif monitorinfo['config']['technology'] == 'dash':
+        # If DASH
+        if monitorinfo['config']['technology'] == 'dash':
+          if response:
+            # Perform validations
             if endpointconfig['validations']['perform']:
               manifestlastupdated = utils.getmanifestlastupdated(response)
               if manifestlastupdated != monitorinfo['manifest']['primary']['headers']['manifestlastupdated'] or manifestlastupdated == 0:
                 dash.monitor(logger, monitorinfo, utils.decoderesponse(response, False))
               monitorinfo['manifest']['primary']['headers']['manifestlastupdated'] = manifestlastupdated
-        # Check for staleness
-        monitorinfo['manifest']['primary']['buffer']['window'][requesttime] = monitorinfo['manifest']['primary']['new']['duration']
-        if requesttime - monitorinfo['state']['starttimeperf'] > max(monitorinfo['manifest']['primary']['buffer']['size'], monitorinfo['config']['endpointconfig']['manifests']['frequency']):
-          utils.checkforstaleness(logger, monitorinfo, requesttime)
+          # Check for staleness
+          monitorinfo['manifest']['primary']['buffer']['window'][requesttime] = monitorinfo['manifest']['primary']['new']['duration']
+          if requesttime - monitorinfo['state']['starttimeperf'] > max(monitorinfo['manifest']['primary']['buffer']['size'], monitorinfo['config']['endpointconfig']['manifests']['frequency']):
+            utils.checkforstaleness(logger, monitorinfo, requesttime, 'primary', 'multi')
+        # If HLS
+        elif monitorinfo['config']['technology'] == 'hls':
+          if response:
+            # Start threads at first, then restart threads if multivariant manifest has changed
+            manifesthash = hashlib.md5(utils.decoderesponse(response, False)).hexdigest()
+            if manifesthash != monitorinfo['manifest']['multi']['lasthash']:
+              hls.restartthreads(logger, monitorinfo, utils.decoderesponse(response, True))
+            monitorinfo['manifest']['multi']['lasthash'] = manifesthash
       # Publish metrics to CW
       if endpointconfig['cwmetrics'] and not monitorinfo['args'].no_aws:
         if requesttime - monitorinfo['metrics']['lastpublishtime'] > monitorinfo['metrics']['publishinterval']:
