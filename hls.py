@@ -6,6 +6,7 @@ from urllib.parse import urljoin
 import threading
 import time
 import re
+from datetime import datetime, timezone, timedelta
 
 
 def parsetag(logger, tag, value):
@@ -35,35 +36,54 @@ def getmetadatatags(logger, renditionalias, responselines, monitorinfo:dict):
     raise
 
 
+def resetsegmentinfo():
+  return {
+    'segmentduration': None,
+    'pdttimestamp': None,
+    'tags': []
+  }
+
+
 def getsegmentinfo(logger, renditionalias, responselines, monitorinfo:dict, allsegments:bool=False):
   try:
     mediasequence = monitorinfo['manifest'][renditionalias]['mediasequence']
-    segmentduration = None
-    tags = []
+    implicitpdttimestamp = None
+    segmentinfo = resetsegmentinfo()
     for line in responselines:
       line = line.strip()
       if line.startswith('#'):
         tag, value = (line[1:].split(':', 1)) if ':' in line else (line[1:], '')
-        tags.append((tag, value))
+        segmentinfo['tags'].append((tag, value))
         if tag == 'EXTINF' and value:
           match = re.match(r'^\d*\.?\d+', value)
           if match:
-            segmentduration = float(match.group())
+            segmentinfo['segmentduration'] = float(match.group()) # type: ignore
+        elif tag == 'EXT-X-PROGRAM-DATE-TIME':
+          if value.endswith('Z'):
+            value = value[:-1] + '+00:00'
+          segmentinfo['pdttimestamp'] = datetime.fromisoformat(value) # type: ignore
+          implicitpdttimestamp = segmentinfo['pdttimestamp']
       elif line:
         if monitorinfo['manifest'][renditionalias]['foundlastsegment'] or allsegments:
           segment = {
             'msn': mediasequence,
-            'dsec': round(segmentduration, 3),
-            'tags': tags.copy()
+            'pdt': implicitpdttimestamp,
+            'tags': segmentinfo['tags']
           }
-          monitorinfo['manifest'][renditionalias]['new']['segments'].append(segment)
-          if not allsegments:
-            logger.debug(f"Found new segment: {segment}")
+          if segmentinfo['segmentduration']:
+            segment['dsec'] = round(segmentinfo['segmentduration'], 3)
+            monitorinfo['manifest'][renditionalias]['new']['segments'].append(segment)
+            if not allsegments:
+              logger.debug(f"Found new segment: {segment}")
+          else:
+            logger.warning(f"Segment {segment} has no duration")
         elif not allsegments:
           if mediasequence == monitorinfo['manifest'][renditionalias]['last']['segment']['msn']:
             monitorinfo['manifest'][renditionalias]['foundlastsegment'] = True
+        if implicitpdttimestamp and segmentinfo['segmentduration']:
+          implicitpdttimestamp += timedelta(seconds=segmentinfo['segmentduration'])
         mediasequence += 1
-        tags.clear()
+        segmentinfo = resetsegmentinfo()
   except Exception as e:
     logger.error(f"Error getting segment info. Exception: {str(e)} Traceback: {traceback.format_exc()}")
 
@@ -76,16 +96,24 @@ def gothroughsegments(logger, renditionalias, renditionid, monitorinfo:dict, new
         monitorinfo['manifest'][renditionalias]['new']['duration'] = monitorinfo['manifest'][renditionalias]['new']['duration'] + segment['dsec']
         # Go through segment tags
         for tag, value in segment['tags']:
+          # Check for discontinuity
           if tag == 'EXT-X-DISCONTINUITY':
             logger.warning(f"Discontinuity")
             utils.addmetric(logger, monitorinfo, 'Discontinuity', 1, 'Count', [{'Name': 'Rendition', 'Value': renditionid}])
       # Update last segment
       monitorinfo['manifest'][renditionalias]['last']['segment'] = segment.copy()
-      # Update content duration since start
       if renditionalias == 'primary':
+        # Update content duration since start
         monitorinfo['manifest']['primary']['contentdurationsincestart'] = monitorinfo['manifest']['primary'].setdefault('contentdurationsincestart', 0) + segment['dsec']
-    if new and not monitorinfo['manifest'][renditionalias]['foundlastsegment']:
-      logger.warning(f"Last segment not found")
+    if new:
+      # Check if found last segment
+      if not monitorinfo['manifest'][renditionalias]['foundlastsegment']:
+        logger.warning(f"Last segment not found")
+      if renditionalias == 'primary':
+        # Check PDT delta
+        if monitorinfo['manifest'][renditionalias]['last']['segment']['pdt']:
+          pdtdelta = round((monitorinfo['manifest'][renditionalias]['last']['segment']['pdt'] - datetime.now(timezone.utc)).total_seconds())
+          utils.addmetric(logger, monitorinfo, 'PdtDelta', pdtdelta, 'Seconds', [])
   except Exception as e:
     logger.error(f"Error going through segments. Exception: {str(e)} Traceback: {traceback.format_exc()}")
 

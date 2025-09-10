@@ -9,6 +9,7 @@
     {% set positions = getpositions('metric') %},{% include 'widgets/metrics/manifest4xx' %}
     {% set positions = getpositions('metric') %},{% include 'widgets/metrics/manifest5xx' %}
     {% set positions = getpositions('metric') %},{% include 'widgets/metrics/manifestFailure' %}
+    {% set positions = getpositions('metric') %},{% include 'widgets/metrics/pdtDelta' %}
     {% set positions = getpositions('metric') %},{% include 'widgets/metrics/overlayAdBreak' %}
     {% set positions = getpositions('metric') %},{% include 'widgets/metrics/regularAdBreak' %}
     {% set positions = getpositions('metric') %},{% include 'widgets/metrics/adBreakAdvertisedDuration' %}

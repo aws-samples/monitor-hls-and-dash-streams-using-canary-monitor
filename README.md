@@ -1,6 +1,6 @@
 ## Monitor HLS and DASH Streams Using Canary Monitor
 
-**The current version 2 doesn't support monitoring of HLS endpoints. Use [version 1](https://github.com/aws-samples/monitor-hls-and-dash-streams-using-canary-monitor/releases/tag/v1.0) and corresponding [readme](https://github.com/aws-samples/monitor-hls-and-dash-streams-using-canary-monitor/blob/main/README-v1.md) for monintoring HLS endpoints during this transition phase. Version 2 introduces operational and functional improvements.** 
+**The current version 2 introduces operational and functional improvements. Ad break detection is currently not supported for HLS endpoints.** 
 
 The canary monitor is a tool, which, like a player, downloads and inspects HLS or DASH manifests from a list of origins at regular intervals. It performs manifest and stream validations, writes logs and stores monitoring reports, sends metrics to AWS CloudWatch and creates CloudWatch dashboards. Optionally it can also download and inspect ad-tracking data for origins like AWS Elemental MediaTailor (EMT) where ad-tracking endpoints are available. It works with various origins, but has been primarily designed to monitor streams originating from AWS Elemental MediaPackage (EMP) and EMT.
 
