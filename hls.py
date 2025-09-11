@@ -141,19 +141,20 @@ def monitor(renditionid, url:str, rendition:dict, monitorinfo:dict, primary:bool
       # Save manifest response
       if monitorinfo['config']['endpointconfig']['manifests']['save']['local']:
         utils.saveresponse(logger, response, monitorinfo, 'manifests', "", False, renditionid)
-      # Perform validations
-      if monitorinfo['config']['endpointconfig']['validations']['perform']:
-        manifestlastupdated = utils.getmanifestlastupdated(response)
-        if manifestlastupdated != monitorinfo['manifest'][renditionalias]['headers']['manifestlastupdated'] or manifestlastupdated == 0:
-          responselines = utils.decoderesponse(response, True).splitlines()
-          getmetadatatags(logger, renditionalias, responselines, monitorinfo)
-          if not monitorinfo['manifest'][renditionalias]['last']['segment']:
-            getsegmentinfo(logger, renditionalias, responselines, monitorinfo, True)
-            gothroughsegments(logger, renditionalias, renditionid, monitorinfo)
-          else:
-            getsegmentinfo(logger, renditionalias, responselines, monitorinfo)
-            gothroughsegments(logger, renditionalias, renditionid, monitorinfo, True)
-        monitorinfo['manifest'][renditionalias]['headers']['manifestlastupdated'] = manifestlastupdated
+      if response:
+        # Perform validations
+        if monitorinfo['config']['endpointconfig']['validations']['perform']:
+          manifestlastupdated = utils.getmanifestlastupdated(response)
+          if manifestlastupdated != monitorinfo['manifest'][renditionalias]['headers']['manifestlastupdated'] or manifestlastupdated == 0:
+            responselines = utils.decoderesponse(response, True).splitlines()
+            getmetadatatags(logger, renditionalias, responselines, monitorinfo)
+            if not monitorinfo['manifest'][renditionalias]['last']['segment']:
+              getsegmentinfo(logger, renditionalias, responselines, monitorinfo, True)
+              gothroughsegments(logger, renditionalias, renditionid, monitorinfo)
+            else:
+              getsegmentinfo(logger, renditionalias, responselines, monitorinfo)
+              gothroughsegments(logger, renditionalias, renditionid, monitorinfo, True)
+          monitorinfo['manifest'][renditionalias]['headers']['manifestlastupdated'] = manifestlastupdated
       # Check for staleness
       monitorinfo['manifest'][renditionalias]['buffer']['window'][requesttime] = monitorinfo['manifest'][renditionalias]['new']['duration']
       if requesttime - monitorinfo['state']['starttimeperf'] > max(monitorinfo['manifest'][renditionalias]['buffer']['size'], monitorinfo['config']['endpointconfig']['manifests']['frequency']):
