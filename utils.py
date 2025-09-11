@@ -180,6 +180,7 @@ def initializemonitor(monitorinfo:dict, technology:str, renditionalias:str=''):
       'manifest': {
         'primary': {
           'foundlastsegment': False,
+          'lastsegmentnotfoundcount': 0,
           'adbreaks': {},
           'periods': {},
           'headers': {
@@ -205,6 +206,7 @@ def initializemonitor(monitorinfo:dict, technology:str, renditionalias:str=''):
       renditionalias: {
         'mediasequence': 0,
         'foundlastsegment': False,
+        'lastsegmentnotfoundcount': 0,
         'adbreaks': {},
         'headers': {
           'manifestlastupdated': 0

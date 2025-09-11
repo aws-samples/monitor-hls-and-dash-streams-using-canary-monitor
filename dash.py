@@ -277,10 +277,15 @@ def gothroughsegments(logger, monitorinfo:dict, new:bool=False):
         monitorinfo['manifest']['primary']['last']['segment'] = segment.copy()
       # Update last period
       monitorinfo['manifest']['primary']['last']['period'] = period
-    # Check if found last segment
     if new:
-      if not monitorinfo['manifest']['primary']['foundlastsegment']:
+      # Check if found last segment
+      monitorinfo['manifest']['primary']['lastsegmentnotfoundcount'] = 0 if monitorinfo['manifest']['primary']['foundlastsegment'] else monitorinfo['manifest']['primary']['lastsegmentnotfoundcount'] + 1
+      if 0 < monitorinfo['manifest']['primary']['lastsegmentnotfoundcount'] < 3:
         logger.warning(f"Last segment not found")
+      elif monitorinfo['manifest']['primary']['lastsegmentnotfoundcount'] == 3:
+        logger.warning(f"Last segment not found, restarting")
+        monitorinfo['manifest']['primary']['last']['segment'] = {}
+        monitorinfo['manifest']['primary']['last']['period'] = ''
   except Exception as e:
     logger.error(f"Error going through new segments. Exception: {str(e)} Traceback: {traceback.format_exc()}")
 
@@ -316,6 +321,9 @@ def monitor(logger, monitorinfo:dict, response:bytes):
             segmenttemplates, primarysegmenttemplate = getsegmenttemplateinfo(logger, xmlperiod, monitorinfo)
             getsegmentinfo(logger, monitorinfo, primarysegmenttemplate, xmlperiod, True)
           gothroughsegments(logger, monitorinfo)
+          # Stop if did not find any segments
+          if not monitorinfo['manifest']['primary']['last']['segment']:
+            raise UnsupportedManifest(f"Unable to find segments")
         else:
           # Go through last and any new periods
           for xmlperiod in xmlperiods:
@@ -326,9 +334,6 @@ def monitor(logger, monitorinfo:dict, response:bytes):
               segmenttemplates, primarysegmenttemplate = getsegmenttemplateinfo(logger, xmlperiod, monitorinfo)
               getsegmentinfo(logger, monitorinfo, primarysegmenttemplate, xmlperiod, False)
           gothroughsegments(logger, monitorinfo, True)
-        # Stop if did not find any segments
-        if not monitorinfo['manifest']['primary']['last']['segment']:
-          raise UnsupportedManifest(f"Unable to find segments")
       else:
         logger.warning(f"Manifest type is '{xmlmpdtype}', should be 'dynamic'")
     else:
