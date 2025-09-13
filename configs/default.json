@@ -21,7 +21,8 @@
   "validations": {
     "perform": true,
     "custom": {
-      "requiredrenditions": [ "video", "audio" ]
+      "requiredrenditions": [ "video", "audio" ],
+      "maxptsdelta": 0.1
     }
   }
 }

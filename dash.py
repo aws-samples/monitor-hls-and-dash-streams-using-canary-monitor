@@ -7,15 +7,31 @@ from datetime import datetime, timezone
 class UnsupportedManifest(Exception):
   pass
 
+
+def gothroughsegmenttemplatesoflastperiod(logger, monitorinfo:dict, segmenttemplates:list):
+  ptsvalues = set()
+  try:
+    ns = {'default': 'urn:mpeg:dash:schema:mpd:2011'}
+    for segmenttemplate in segmenttemplates:
+      pts = getsegmentinfo(logger, monitorinfo, segmenttemplate, '', False, True)
+      ptsvalues.add(pts)
+    # Compare PTS values
+    if ptsvalues:
+      maxptsdelta = round(max(ptsvalues) - min(ptsvalues), 3)
+      utils.addmetric(logger, monitorinfo, 'PtsDelta', maxptsdelta, 'Seconds', [])
+      if abs(maxptsdelta) > monitorinfo['config']['endpointconfig']['validations']['custom']['maxptsdelta']:
+        logger.warning(f"Max PTS delta across segmentation templates is {maxptsdelta} s, possible lip sync issue")
+  except Exception as e:
+    logger.error(f"Error going through segment templates. Exception: {str(e)} Traceback: {traceback.format_exc()}")
+
 # Find new segments in a period
-def getsegmentinfo(logger, monitorinfo:dict, primarysegmenttemplate, xmlperiod, allsegments:bool):
+def getsegmentinfo(logger, monitorinfo:dict, segmenttemplate, periodid, allsegments:bool, onlyvalidation:bool):
   ns = {'default': 'urn:mpeg:dash:schema:mpd:2011'}
   try:
-    periodid = xmlperiod.get('id')
     compt = 0
-    timescale = int(primarysegmenttemplate['xmlsegmenttemplate'].get('timescale'))
-    pto = int(primarysegmenttemplate['xmlsegmenttemplate'].get('presentationTimeOffset', 0))
-    xmlsegmenttimeline = primarysegmenttemplate['xmlsegmenttemplate'].find('default:SegmentTimeline', ns)
+    timescale = int(segmenttemplate['xmlsegmenttemplate'].get('timescale'))
+    pto = int(segmenttemplate['xmlsegmenttemplate'].get('presentationTimeOffset', 0))
+    xmlsegmenttimeline = segmenttemplate['xmlsegmenttemplate'].find('default:SegmentTimeline', ns)
     for element in xmlsegmenttimeline:
       # No pattern
       if element.tag == f"{{{ns['default']}}}S":
@@ -25,24 +41,26 @@ def getsegmentinfo(logger, monitorinfo:dict, primarysegmenttemplate, xmlperiod, 
         if t != compt:
           compt = t
         for i in range(r + 1):
-          if monitorinfo['manifest']['primary']['foundlastsegment'] or allsegments:
-            segment = {
-              'd': d,
-              'dsec': round(d / timescale, 3),
-              't': compt,
-              'nextt': compt + d,
-              'pts': round((compt - pto) / timescale, 3)
-            }
-            monitorinfo['manifest']['primary']['new']['segments'].setdefault(periodid, []).append(segment)
-            if not allsegments:
-              logger.debug(f"Found new segment in period {periodid}: {segment}")
-          else:
-            if periodid == monitorinfo['manifest']['primary']['last']['period']:
-              if compt == monitorinfo['manifest']['primary']['last']['segment']['t']:
-                monitorinfo['manifest']['primary']['foundlastsegment'] = True
+          if not onlyvalidation:
+            if monitorinfo['manifest']['primary']['foundlastsegment'] or allsegments:
+              segment = {
+                'd': d,
+                'dsec': round(d / timescale, 3),
+                't': compt,
+                'nextt': compt + d,
+                'pts': round((compt - pto) / timescale, 3)
+              }
+              monitorinfo['manifest']['primary']['new']['segments'].setdefault(periodid, []).append(segment)
+              if not allsegments:
+                logger.debug(f"Found new segment in period {periodid}: {segment}")
+            else:
+              if periodid == monitorinfo['manifest']['primary']['last']['period']:
+                if compt == monitorinfo['manifest']['primary']['last']['segment']['t']:
+                  monitorinfo['manifest']['primary']['foundlastsegment'] = True
           compt = compt + d
+    return round((compt - pto) / timescale, 3)
   except Exception as e:
-    logger.error(f"Error finding new segments. Primarysegmenttemplate: {primarysegmenttemplate} Exception: {str(e)} Traceback: {traceback.format_exc()}")
+    logger.error(f"Error finding new segments in period {periodid}. Segmenttemplate: {et.tostring(segmenttemplate['xmlsegmenttemplate'], encoding='unicode')} Exception: {str(e)} Traceback: {traceback.format_exc()}")
 
 
 # Return all available segment templates and mark a primary
@@ -309,6 +327,7 @@ def monitor(logger, monitorinfo:dict, response:bytes):
   ns = {'default': 'urn:mpeg:dash:schema:mpd:2011'}
   xmlroot = et.fromstring(response)
   xmlmpdtype = xmlroot.get('type', '')
+  segmenttemplates = []
   try:
     if xmlroot is not None:
       if xmlmpdtype == 'dynamic':
@@ -319,7 +338,7 @@ def monitor(logger, monitorinfo:dict, response:bytes):
           for xmlperiod in xmlperiods:
             getperiodinfo(logger, xmlperiod, monitorinfo)
             segmenttemplates, primarysegmenttemplate = getsegmenttemplateinfo(logger, xmlperiod, monitorinfo)
-            getsegmentinfo(logger, monitorinfo, primarysegmenttemplate, xmlperiod, True)
+            getsegmentinfo(logger, monitorinfo, primarysegmenttemplate, xmlperiod.get('id'), True, False)
           gothroughsegments(logger, monitorinfo)
           # Stop if did not find any segments
           if not monitorinfo['manifest']['primary']['last']['segment']:
@@ -332,8 +351,9 @@ def monitor(logger, monitorinfo:dict, response:bytes):
               if monitorinfo['manifest']['primary']['foundlastsegment']:
                 getperiodinfo(logger, xmlperiod, monitorinfo)
               segmenttemplates, primarysegmenttemplate = getsegmenttemplateinfo(logger, xmlperiod, monitorinfo)
-              getsegmentinfo(logger, monitorinfo, primarysegmenttemplate, xmlperiod, False)
+              getsegmentinfo(logger, monitorinfo, primarysegmenttemplate, xmlperiod.get('id'), False, False)
           gothroughsegments(logger, monitorinfo, True)
+          gothroughsegmenttemplatesoflastperiod(logger, monitorinfo, segmenttemplates)
       else:
         logger.warning(f"Manifest type is '{xmlmpdtype}', should be 'dynamic'")
     else:

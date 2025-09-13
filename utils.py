@@ -92,7 +92,7 @@ def request(logger, method:str, url:str, requesttype:str, rendition:str, monitor
     addmetric(logger, monitorinfo, 'Request', 1, 'Count', dimensions + [{'Name': 'Status', 'Value': f"{response.status // 100}xx"}])
     return None
   except Exception as e:
-    logger.error(f"HTTP failure, url: {url} Exception: {str(e)}")
+    logger.error(f"HTTP timeout, url: {url} Exception: {str(e)}")
     addmetric(logger, monitorinfo, 'Request', 1, 'Count', dimensions + [{'Name': 'Status', 'Value': 'failure'}])
     return None
   else:
