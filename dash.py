@@ -19,17 +19,18 @@ def gothroughsegmenttemplatesoflastperiod(logger, monitorinfo:dict, segmenttempl
     if ptsvalues:
       maxptsdelta = round(max(ptsvalues) - min(ptsvalues), 3)
       utils.addmetric(logger, monitorinfo, 'PtsDelta', maxptsdelta, 'Seconds', [])
-      if abs(maxptsdelta) > monitorinfo['config']['endpointconfig']['validations']['custom']['maxptsdelta']:
+      if maxptsdelta > monitorinfo['config']['endpointconfig']['validations']['custom']['maxptsdelta']:
         logger.warning(f"Max PTS delta across segmentation templates is {maxptsdelta} s, possible lip sync issue")
   except Exception as e:
     logger.error(f"Error going through segment templates. Exception: {str(e)} Traceback: {traceback.format_exc()}")
+
 
 # Find new segments in a period
 def getsegmentinfo(logger, monitorinfo:dict, segmenttemplate, periodid, allsegments:bool, onlyvalidation:bool):
   ns = {'default': 'urn:mpeg:dash:schema:mpd:2011'}
   try:
     compt = 0
-    timescale = int(segmenttemplate['xmlsegmenttemplate'].get('timescale'))
+    timescale = int(segmenttemplate['xmlsegmenttemplate'].get('timescale', 1))
     pto = int(segmenttemplate['xmlsegmenttemplate'].get('presentationTimeOffset', 0))
     xmlsegmenttimeline = segmenttemplate['xmlsegmenttemplate'].find('default:SegmentTimeline', ns)
     for element in xmlsegmenttimeline:
@@ -106,12 +107,76 @@ def getsegmenttemplateinfo(logger, xmlperiod, monitorinfo):
     primarysegmenttemplate = next((item for item in segmenttemplates if item['mimetype'] == 'video/mp4'), None)
     if primarysegmenttemplate:
       primarysegmenttemplate['primary'] = True
+      return segmenttemplates, primarysegmenttemplate
     else:
-      logger.warning(f"Did not assign a primary segment template")
-    # Update manifest information
+      raise UnsupportedManifest(f"No segment template")
   except Exception as e:
-    logger.error(f"Error getting segment template. Exception: {str(e)} Traceback: {traceback.format_exc()}")
-  return segmenttemplates, primarysegmenttemplate
+    logger.error(f"Error getting segment template. Period: {et.tostring(xmlperiod, encoding='unicode')} Exception: {str(e)} Traceback: {traceback.format_exc()}")
+    raise
+
+
+# Find out if period is an ad break and collect ad break type and duration
+def determineifadbreak(logger, xmlperiodid, monitorinfo, periodinfo, observetime):
+  adbreakinfo = {
+    'observed': observetime,
+    'segmentsduration': 0.0
+  }
+  try:
+    if monitorinfo['config']['origin'].lower() == 'emt':
+      if '_' in xmlperiodid:
+        periodinfo['isadbreak'] = True
+        adbreakinfo['type'] = 'regular'
+      else:
+        for sctemessage in periodinfo['spliceinfo']:
+          if 'descriptors' in sctemessage.keys():
+            for descriptor in sctemessage['descriptors']:
+              if 'segmentationtype' in descriptor.keys():
+                if descriptor['segmentationtype'] == 56:
+                  periodinfo['isadbreak'] = True
+                  adbreakinfo['type'] = 'overlay'
+                  if 'availnum' in sctemessage.keys():
+                    adbreakinfo['availnum'] = sctemessage['availnum']
+                  adbreakinfo['advertisedduration'] = descriptor['duration'] if 'duration' in descriptor.keys() else 0.0
+    else:
+      for adbreaksctesignal in monitorinfo['config']['endpointconfig']['validations']['custom']['adbreaksctesignals']:
+        if isinstance(adbreaksctesignal, int) or adbreaksctesignal.isdigit():
+          adbreaksctesignal = int(adbreaksctesignal)
+          for sctemessage in periodinfo['spliceinfo']:
+            if 'descriptors' in sctemessage.keys():
+              for descriptor in sctemessage['descriptors']:
+                if 'segmentationtype' in descriptor.keys():
+                  if descriptor['segmentationtype'] == adbreaksctesignal:
+                    periodinfo['isadbreak'] = True
+                    if 'duration' in descriptor.keys():
+                      adbreakinfo['advertisedduration'] = descriptor['duration']
+                    else:
+                      adbreakinfo['advertisedduration'] = 0
+                      if monitorinfo['config']['endpointconfig']['validations']['custom']['checkforadbreakduration']:
+                        logger.warning(f"Missing duration in segmentation descriptor type {adbreaksctesignal}")
+                    if 'availnum' in sctemessage.keys():
+                      adbreakinfo['availnum'] = sctemessage['availnum']
+                    adbreakinfo['type'] = 'overlay' if adbreaksctesignal == 56 else 'regular'
+        else:
+          for sctemessage in periodinfo['spliceinfo']:
+            if 'type' in sctemessage.keys() and sctemessage['type'] == adbreaksctesignal:
+              if 'outofnetwork' in sctemessage.keys() and sctemessage['outofnetwork']:
+                periodinfo['isadbreak'] = True
+                if 'duration' in sctemessage.keys():
+                  adbreakinfo['advertisedduration'] = sctemessage['duration']
+                else:
+                  adbreakinfo['advertisedduration'] = 0
+                  if monitorinfo['config']['endpointconfig']['validations']['custom']['checkforadbreakduration']:
+                    logger.warning(f"Missing duration in {adbreaksctesignal}")
+                if 'availnum' in sctemessage.keys():
+                  adbreakinfo['availnum'] = sctemessage['availnum']
+                adbreakinfo['type'] = 'regular'
+                if 'descriptors' in sctemessage.keys():
+                  for descriptor in sctemessage['descriptors']:
+                    if 'segmentationtype' in descriptor.keys() and descriptor['segmentationtype'] == 56:
+                      adbreakinfo['type'] = 'overlay'
+    return adbreakinfo
+  except Exception as e:
+    logger.error(f"Error determining if period as an ad break. Exception: {str(e)} Traceback: {traceback.format_exc()}")
 
 
 # Find out information about period
@@ -127,27 +192,22 @@ def getperiodinfo(logger, xmlperiod, monitorinfo:dict):
         'compact': False,
         'isadbreak': False,
         'spliceinfo': [],
-        'adaptationsets': []
+        'adaptationsets': [],
+        'eventstream': None
       }
-      # Compactness info
       xmladaptationsets = xmlperiod.findall('default:AdaptationSet', ns)
       for xmladaptationset in xmladaptationsets:
+        periodinfo['adaptationsets'].append({
+          'mimetype': xmladaptationset.get('mimeType', ''),
+          'renditions': len(xmladaptationset.findall('default:Representation', ns))
+        })
         xmlsegmenttemplate = xmladaptationset.find('default:SegmentTemplate', ns)
         if xmlsegmenttemplate is not None and xmlsegmenttemplate.find('default:SegmentTimeline', ns) is not None:
           periodinfo['compact'] = True
-          break
-      # Adaptation set info
-      xmladaptationsets = xmlperiod.findall('default:AdaptationSet', ns)
-      for xmladaptationset in xmladaptationsets:
-        xmlrepresentations = xmladaptationset.findall('default:Representation', ns)
-        adaptationset = {
-          'mimetype': xmladaptationset.get('mimeType', ''),
-          'renditions': len(xmlrepresentations)
-        }
-        periodinfo['adaptationsets'].append(adaptationset)
-      # Splice info
+      # Event stream info
       xmleventstream = xmlperiod.find('default:EventStream', ns)
       if xmleventstream is not None:
+        periodinfo['eventstream'] = et.tostring(xmleventstream, encoding='unicode')
         xmlevents = xmleventstream.findall('default:Event', ns)
         for xmlevent in xmlevents:
           xmlspliceinfosection = xmlevent.find('.//{*}SpliceInfoSection')
@@ -182,6 +242,8 @@ def getperiodinfo(logger, xmlperiod, monitorinfo:dict):
                 if xmlsegmentationdescriptor.get('segmentationDuration') and xmleventstream.get('timescale'):
                   segmentationdescriptor['duration'] = round(int(xmlsegmentationdescriptor.get('segmentationDuration')) / int(xmleventstream.get('timescale')), 3)
               sctemessage.setdefault('descriptors', []).append(segmentationdescriptor)
+            if len(sctemessage['descriptors']) > 1:
+              logger.warning(f"Multiple ({len(sctemessage['descriptors'])}) segmentation descriptors in a SCTE message: {sctemessage['descriptors']}")
             periodinfo['spliceinfo'].append(sctemessage)
           # Binary
           xmlsignal = xmlevent.find('.//{*}Signal')
@@ -189,54 +251,10 @@ def getperiodinfo(logger, xmlperiod, monitorinfo:dict):
             xmlbinary = xmlsignal.find('.//{*}Binary', ns)
             if xmlbinary is not None:
               periodinfo['spliceinfo'].append(utils.decodesctestring(logger, xmlbinary.text))
-      # Identify ad break type
-      adbreakinfo = {
-        'observed': observetime,
-        'segmentsduration': 0.0
-      }
-      # EMT origin
-      if monitorinfo['config']['origin'].lower() == 'emt':
-        if '_' in xmlperiodid:
-          adbreakinfo['type'] = 'regular'
-        else:
-          keepgoing = True
-          for sctemessage in periodinfo['spliceinfo']:
-            if 'descriptors' in sctemessage.keys():
-              for descriptor in sctemessage['descriptors']:
-                if keepgoing:
-                  if 'segmentationtype' in descriptor.keys():
-                    if descriptor['segmentationtype'] == 56:
-                      keepgoing = False
-                      if 'availnum' in sctemessage.keys():
-                        adbreakinfo['availnum'] = sctemessage['availnum']
-                      adbreakinfo['advertisedduration'] = descriptor['duration'] if 'duration' in descriptor.keys() else 0.0
-                      adbreakinfo['type'] = 'overlay'
-      # Non-EMT origin
-      else:
-        keepgoing = True
-        for sctemessage in periodinfo['spliceinfo']:
-          if 'descriptors' in sctemessage.keys():
-            for descriptor in sctemessage['descriptors']:
-              if keepgoing:
-                if 'segmentationtype' in descriptor.keys():
-                  if descriptor['segmentationtype'] in [34, 48, 50, 52, 54, 56]:
-                    keepgoing = False
-                    if 'availnum' in sctemessage.keys():
-                      adbreakinfo['availnum'] = sctemessage['availnum']
-                    adbreakinfo['advertisedduration'] = descriptor['duration'] if 'duration' in descriptor.keys() else 0.0
-                    adbreakinfo['type'] = 'overlay' if descriptor['segmentationtype'] == 56 else 'regular'
-          else:
-            if keepgoing:
-              if 'outofnetwork' in sctemessage.keys():
-                if sctemessage['outofnetwork']:
-                  keepgoing = False
-                  if 'availnum' in sctemessage.keys():
-                      adbreakinfo['availnum'] = sctemessage['availnum']
-                  adbreakinfo['advertisedduration'] = sctemessage['duration'] if 'duration' in sctemessage.keys() else 0.0
-                  adbreakinfo['type'] = 'regular'
+      # Determine if period is ad break
+      adbreakinfo = determineifadbreak(logger, xmlperiodid, monitorinfo, periodinfo, observetime)
       # Update manifest ad break information, send metric for ad break start and type
-      if 'type' in adbreakinfo.keys():
-        periodinfo['isadbreak'] = True
+      if periodinfo['isadbreak'] and adbreakinfo:
         adbreakid = xmlperiodid.split('_')[0]
         if adbreakid not in monitorinfo['manifest']['primary']['adbreaks'].keys():
           monitorinfo['manifest']['primary']['adbreaks'][adbreakid] = adbreakinfo
@@ -246,16 +264,18 @@ def getperiodinfo(logger, xmlperiod, monitorinfo:dict):
               utils.addmetric(logger, monitorinfo, 'AdvertisedDuration', adbreakinfo['advertisedduration'], 'Seconds', [{'Name': 'AdBreakType', 'Value': adbreakinfo['type']}])
             if 'availnum' in adbreakinfo.keys():
               utils.addmetric(logger, monitorinfo, 'AvailNum', adbreakinfo['availnum'], 'Count', [{'Name': 'AdBreakType', 'Value': adbreakinfo['type']}])
-      # Update manifest period information
-      monitorinfo['manifest']['primary']['periods'][xmlperiodid] = periodinfo
-      logger.debug(f"Found {'new ' if monitorinfo['manifest']['primary']['foundlastsegment'] else ''}period {xmlperiodid}: compact={periodinfo['compact']}, adbreak={periodinfo['isadbreak']}{', type=' + adbreakinfo['type'] if 'type' in adbreakinfo.keys() else ''}{', spliceinfo=' + str(periodinfo['spliceinfo']) if len(periodinfo['spliceinfo']) > 0 else ''}, adaptation sets={periodinfo['adaptationsets']}")
+      # Log
+      # logger.debug(f"Found {'new ' if monitorinfo['manifest']['primary']['foundlastsegment'] else ''}period {xmlperiodid}: compact={periodinfo['compact']}, adbreak={periodinfo['isadbreak']}{', type=' + adbreakinfo['type'] if 'type' in adbreakinfo.keys() else ''}{', spliceinfo=' + str(periodinfo['spliceinfo']) + ', ' if len(periodinfo['spliceinfo']) > 0 else ''}, adaptation sets={periodinfo['adaptationsets']}")
+      logger.debug(f"Found {'new ' if monitorinfo['manifest']['primary']['foundlastsegment'] else ''}period {xmlperiodid}: {periodinfo}")
       # Validate required renditions
       for requiredrendition in monitorinfo['config']['endpointconfig']['validations']['custom']['requiredrenditions']:
         found = any(item['mimetype'].startswith(requiredrendition) for item in periodinfo['adaptationsets'])
         if not found:
           logger.warning(f"Missing {requiredrendition} rendition")
+      # Update manifest period information
+      monitorinfo['manifest']['primary']['periods'][xmlperiodid] = periodinfo
     except Exception as e:
-      logger.error(f"Error getting period information. Exception: {str(e)} Traceback: {traceback.format_exc()}")
+      logger.error(f"Error getting period information. Period: {et.tostring(xmlperiod, encoding='unicode')} Exception: {str(e)} Traceback: {traceback.format_exc()}")
   else:
     raise UnsupportedManifest(f"Period has no id")
 

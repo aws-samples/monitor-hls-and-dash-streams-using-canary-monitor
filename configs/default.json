@@ -6,7 +6,7 @@
     "save": {
       "local": false
     },
-    "hlsrenditions": [ "v", "a" ],
+    "hlsrenditions": [ "video", "audio" ],
     "adsegmentprefix": "asset"
   },
   "tracking": {
@@ -21,6 +21,8 @@
   "validations": {
     "perform": true,
     "custom": {
+      "adbreaksctesignals": [ "spliceinsert" ],
+      "checkforadbreakduration": true,
       "requiredrenditions": [ "video", "audio" ],
       "maxptsdelta": 0.1
     }
