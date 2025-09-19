@@ -88,18 +88,39 @@ def getsegmentinfo(logger, renditionalias, responselines, monitorinfo:dict, alls
     logger.error(f"Error getting segment info. Exception: {str(e)} Traceback: {traceback.format_exc()}")
 
 
+def updateadbreakinfo(logger, segment, monitorinfo:dict):
+  try:
+    adbreakinfo = {
+      'observed': f"{datetime.now(timezone.utc)}" if monitorinfo['manifest']['primary']['foundlastsegment'] else None,
+      'type': 'regular'
+    }
+    monitorinfo['manifest']['primary']['currentadbreak'] = segment['msn']
+    monitorinfo['manifest']['primary']['adbreaks'][segment['msn']] = adbreakinfo
+    return adbreakinfo
+  except Exception as e:
+    logger.error(f"Error getting ad break info. Exception: {str(e)} Traceback: {traceback.format_exc()}")
+
 def gothroughsegments(logger, renditionalias, renditionid, monitorinfo:dict, new:bool=False):
   try:
     for segment in monitorinfo['manifest'][renditionalias]['new']['segments']:
+      # Go through segment tags
+      for tag, value in segment['tags']:
+        if tag == 'EXT-X-CUE-OUT':
+          if renditionalias == 'primary' and monitorinfo['config']['origin'].lower() != 'emt':
+            monitorinfo['manifest'][renditionalias]['currentadbreak'] = segment['msn']
+            adbreakinfo = updateadbreakinfo(logger, segment, monitorinfo)
+            if new:
+              utils.addmetric(logger, monitorinfo, 'Start', 1, 'Count', [{'Name': 'AdBreakType', 'Value': adbreakinfo['type']}])
+        elif tag == 'EXT-X-CUE-IN':
+          if renditionalias == 'primary' and monitorinfo['config']['origin'].lower() != 'emt':
+            monitorinfo['manifest'][renditionalias]['currentadbreak'] = None
+        elif tag == 'EXT-X-DISCONTINUITY':
+          if new:
+            logger.warning(f"Discontinuity")
+            utils.addmetric(logger, monitorinfo, 'Discontinuity', 1, 'Count', [{'Name': 'Rendition', 'Value': renditionid}])
       if new:
         # Update new segments duration
         monitorinfo['manifest'][renditionalias]['new']['duration'] = monitorinfo['manifest'][renditionalias]['new']['duration'] + segment['dsec']
-        # Go through segment tags
-        for tag, value in segment['tags']:
-          # Check for discontinuity
-          if tag == 'EXT-X-DISCONTINUITY':
-            logger.warning(f"Discontinuity")
-            utils.addmetric(logger, monitorinfo, 'Discontinuity', 1, 'Count', [{'Name': 'Rendition', 'Value': renditionid}])
       # Update last segment
       monitorinfo['manifest'][renditionalias]['last']['segment'] = segment.copy()
       if renditionalias == 'primary':

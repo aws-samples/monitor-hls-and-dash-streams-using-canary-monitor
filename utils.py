@@ -208,6 +208,7 @@ def initializemonitor(monitorinfo:dict, technology:str, renditionalias:str=''):
         'foundlastsegment': False,
         'lastsegmentnotfoundcount': 0,
         'adbreaks': {},
+        'currentadbreak': None,
         'headers': {
           'manifestlastupdated': 0
         },
