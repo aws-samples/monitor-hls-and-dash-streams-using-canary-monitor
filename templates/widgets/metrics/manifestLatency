@@ -19,9 +19,9 @@
     "view": "timeSeries",
     "stacked": false,
     "region": "{{dashboardconfig['region']}}",
-    "stat": "Average",
+    "stat": "Maximum",
     "period": 60,
-    "title": "Manifest Latency [msec] (avg)",
+    "title": "Manifest Latency [msec] (max)",
     "yAxis": {
       "left": {
         "showUnits": false,

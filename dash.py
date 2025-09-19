@@ -151,7 +151,7 @@ def determineifadbreak(logger, xmlperiodid, monitorinfo, periodinfo, observetime
                       adbreakinfo['advertisedduration'] = descriptor['duration']
                     else:
                       adbreakinfo['advertisedduration'] = 0
-                      if monitorinfo['config']['endpointconfig']['validations']['custom']['checkforadbreakduration']:
+                      if monitorinfo['config']['endpointconfig']['validations']['custom']['checkadbreakscteduration']:
                         logger.warning(f"SCTE message with segmentation descriptor type {adbreaksctesignal} contains no duration ")
                     if 'availnum' in sctemessage.keys():
                       adbreakinfo['availnum'] = sctemessage['availnum']
@@ -165,7 +165,7 @@ def determineifadbreak(logger, xmlperiodid, monitorinfo, periodinfo, observetime
                   adbreakinfo['advertisedduration'] = sctemessage['duration']
                 else:
                   adbreakinfo['advertisedduration'] = 0
-                  if monitorinfo['config']['endpointconfig']['validations']['custom']['checkforadbreakduration']:
+                  if monitorinfo['config']['endpointconfig']['validations']['custom']['checkadbreakscteduration']:
                     logger.warning(f"SCTE message type {adbreaksctesignal} contains no duration")
                 if 'availnum' in sctemessage.keys():
                   adbreakinfo['availnum'] = sctemessage['availnum']
@@ -302,7 +302,7 @@ def gothroughsegments(logger, monitorinfo:dict, new:bool=False):
               if 'advertisedduration' in monitorinfo['manifest']['primary']['adbreaks'][lastadbreakid].keys() and monitorinfo['manifest']['primary']['adbreaks'][lastadbreakid]['advertisedduration'] > 0:
                 monitorinfo['manifest']['primary']['adbreaks'][lastadbreakid]['durationdelta'] = round(monitorinfo['manifest']['primary']['adbreaks'][lastadbreakid]['segmentsduration'] - monitorinfo['manifest']['primary']['adbreaks'][lastadbreakid]['advertisedduration'], 3)
                 utils.addmetric(logger, monitorinfo, 'DurationDelta', abs(monitorinfo['manifest']['primary']['adbreaks'][lastadbreakid]['durationdelta']), 'Seconds', [{'Name': 'AdBreakType', 'Value': monitorinfo['manifest']['primary']['adbreaks'][lastadbreakid]['type']}])
-                if abs(monitorinfo['manifest']['primary']['adbreaks'][lastadbreakid]['durationdelta']) > 0.1:
+                if abs(monitorinfo['manifest']['primary']['adbreaks'][lastadbreakid]['durationdelta']) > monitorinfo['config']['endpointconfig']['validations']['custom']['adbreakdurationdelta']:
                   logger.warning(f"Ad break duration was {'longer' if monitorinfo['manifest']['primary']['adbreaks'][lastadbreakid]['durationdelta'] > 0 else 'shorter'} than advertised by {abs(monitorinfo['manifest']['primary']['adbreaks'][lastadbreakid]['durationdelta'])} seconds")
       # Go through all segments
       for segment in segments:
