@@ -171,13 +171,6 @@ def checkforinputorconfigchanges():
 # Update status report
 def savereport(logger, monitorinfo, final:bool):
   try:
-    report = {
-      'adbreaks': monitorinfo['manifest']['primary']['adbreaks']
-    }
-    if monitorinfo['config']['technology'] == 'dash':
-      report.update({
-        'periods': monitorinfo['manifest']['primary']['periods']
-      })
     reportfilepath = pathlib.Path('archive', monitorinfo['config']['type'], monitorinfo['config']['workload'], monitorinfo['config']['origin'], monitorinfo['config']['endpoint'], monitorinfo['config']['technology'], 'reports', f"{monitorinfo['state']['startdatetime'].strftime('%Y_%m_%d_%H_%M_%S_%f')}.json")
     if final:
       reportfilepathfinal = pathlib.Path('archive', monitorinfo['config']['type'], monitorinfo['config']['workload'], monitorinfo['config']['origin'], monitorinfo['config']['endpoint'], monitorinfo['config']['technology'], 'reports', f"{monitorinfo['state']['startdatetime'].strftime('%Y_%m_%d_%H_%M_%S_%f')}_to_{datetime.now(timezone.utc).strftime('%Y_%m_%d_%H_%M_%S_%f')}.json")
@@ -186,7 +179,7 @@ def savereport(logger, monitorinfo, final:bool):
       reportfilepath = reportfilepathfinal
     reportfilepath.parent.mkdir(parents=True, exist_ok=True)
     with reportfilepath.open('w') as file:
-      file.write(json.dumps(report, indent=2))
+      file.write(json.dumps({'adbreaks': monitorinfo['reporting']['adbreaks'], 'periods': monitorinfo['reporting']['periods']}, indent=2))
       logger.debug(f"Saved report to {reportfilepath}")
   except Exception as e:
     logger.error(f"Error updating worker endpoint configuration. Exception: {str(e)} Traceback: {traceback.format_exc()}")
@@ -249,7 +242,9 @@ def monitor(endpointidentifier:tuple, endpointconfig:dict, stopflag, changeflag,
     },
     'reporting': {
       'lastsavetime': time.perf_counter() - random.uniform(0,15),
-      'saveinterval': 15
+      'saveinterval': 15,
+      'adbreaks': {},
+      'periods': {}
     }
   }
   if monitorinfo['config']['technology'] == 'dash':

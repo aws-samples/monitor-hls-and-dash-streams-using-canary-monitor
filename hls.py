@@ -14,9 +14,13 @@ def parsetag(logger, tag, value):
     if tag == 'EXTINF':
       match = re.match(r'^\d*\.?\d+', value)
       if match:
-        return {tag: float(match.group())}
+        return float(match.group())
+    elif tag == 'EXT-X-DATERANGE':
+     parts = re.split(r',(?=(?:[^"]*"[^"]*")*[^"]*$)', value)
+     attrs = {k.strip(): v.strip().strip('"') for kv in parts if '=' in kv for k, v in [kv.split('=', 1)]}
+     return attrs
     else:
-      return {tag: value}
+      return value
   except Exception as e:
     logger.error(f"Error parsing tag '{tag}' with value '{value}'. Exception: {str(e)} Traceback: {traceback.format_exc()}")
 
@@ -88,17 +92,40 @@ def getsegmentinfo(logger, renditionalias, responselines, monitorinfo:dict, alls
     logger.error(f"Error getting segment info. Exception: {str(e)} Traceback: {traceback.format_exc()}")
 
 
-def updateadbreakinfo(logger, segment, monitorinfo:dict):
+def startadbreak(logger, segment, monitorinfo:dict, new, daterange):
   try:
     adbreakinfo = {
       'observed': f"{datetime.now(timezone.utc)}" if monitorinfo['manifest']['primary']['foundlastsegment'] else None,
-      'type': 'regular'
+      'advertisedduration': 0.0,
+      'segmentsduration': 0.0,
+      'type': 'regular',
+      'tags': segment['tags']
     }
-    monitorinfo['manifest']['primary']['currentadbreak'] = segment['msn']
-    monitorinfo['manifest']['primary']['adbreaks'][segment['msn']] = adbreakinfo
-    return adbreakinfo
+    if monitorinfo['config']['origin'].lower() != 'emt':
+      monitorinfo['reporting']['adbreaks'][segment['msn']] = adbreakinfo
+      if monitorinfo['manifest']['primary']['currentadbreak']:
+        logger.warning(f"New ad break started without proper ending of previous ad break")
+      # Update current ad break
+      monitorinfo['manifest']['primary']['currentadbreak'] = {'id': segment['msn'], 'daterangeid': daterange.get('ID', '')}
+      if new:
+        # Send metrics for ad break start
+        utils.addmetric(logger, monitorinfo, 'Start', 1, 'Count', [{'Name': 'AdBreakType', 'Value': adbreakinfo['type']}])
   except Exception as e:
-    logger.error(f"Error getting ad break info. Exception: {str(e)} Traceback: {traceback.format_exc()}")
+    logger.error(f"Error at ad break start. Exception: {str(e)} Traceback: {traceback.format_exc()}")
+
+
+def endadbreak(logger, segment, monitorinfo:dict, new, daterange):
+  try:
+    # Send metric for ad break segments duration
+    adbreakid = monitorinfo['manifest']['primary']['currentadbreak']['id']
+    utils.addmetric(logger, monitorinfo, 'SegmentsDuration', monitorinfo['reporting']['adbreaks'][adbreakid]['segmentsduration'], 'Seconds',
+                    [{'Name': 'AdBreakType', 'Value': monitorinfo['reporting']['adbreaks'][adbreakid]['type']}])
+    # Clear current ad break
+    if monitorinfo['config']['origin'].lower() != 'emt':
+      monitorinfo['manifest']['primary']['currentadbreak'] = {}
+  except Exception as e:
+    logger.error(f"Error at ad break end. Exception: {str(e)} Traceback: {traceback.format_exc()}")
+
 
 def gothroughsegments(logger, renditionalias, renditionid, monitorinfo:dict, new:bool=False):
   try:
@@ -106,14 +133,21 @@ def gothroughsegments(logger, renditionalias, renditionid, monitorinfo:dict, new
       # Go through segment tags
       for tag, value in segment['tags']:
         if tag == 'EXT-X-CUE-OUT':
-          if renditionalias == 'primary' and monitorinfo['config']['origin'].lower() != 'emt':
-            monitorinfo['manifest'][renditionalias]['currentadbreak'] = segment['msn']
-            adbreakinfo = updateadbreakinfo(logger, segment, monitorinfo)
-            if new:
-              utils.addmetric(logger, monitorinfo, 'Start', 1, 'Count', [{'Name': 'AdBreakType', 'Value': adbreakinfo['type']}])
+          if renditionalias == 'primary':
+            startadbreak(logger, segment, monitorinfo, new, {})
+        elif tag == 'EXT-X-DATERANGE' and 'SCTE35-OUT=' in value:
+          if renditionalias == 'primary':
+            startadbreak(logger, segment, monitorinfo, new, parsetag(logger, tag, value))
         elif tag == 'EXT-X-CUE-IN':
-          if renditionalias == 'primary' and monitorinfo['config']['origin'].lower() != 'emt':
-            monitorinfo['manifest'][renditionalias]['currentadbreak'] = None
+          if renditionalias == 'primary':
+            if monitorinfo['manifest']['primary']['currentadbreak']:
+              endadbreak(logger, segment, monitorinfo, new, {})
+        elif tag == 'EXT-X-DATERANGE' and 'SCTE35-OUT=' not in value:
+          if renditionalias == 'primary':
+            if monitorinfo['manifest']['primary']['currentadbreak']:
+              parseddaterange = parsetag(logger, tag, value)
+              if parseddaterange.get('ID', '') == monitorinfo['manifest']['primary']['currentadbreak']['daterangeid']:
+                endadbreak(logger, segment, monitorinfo, new, parseddaterange)
         elif tag == 'EXT-X-DISCONTINUITY':
           if new:
             logger.warning(f"Discontinuity")
@@ -124,8 +158,12 @@ def gothroughsegments(logger, renditionalias, renditionid, monitorinfo:dict, new
       # Update last segment
       monitorinfo['manifest'][renditionalias]['last']['segment'] = segment.copy()
       if renditionalias == 'primary':
-        # Update content duration since start
+        # Update content duration since start for tracking playhead
         monitorinfo['manifest']['primary']['contentdurationsincestart'] = monitorinfo['manifest']['primary'].setdefault('contentdurationsincestart', 0) + segment['dsec']
+      # Update ad break segments duration
+      if monitorinfo['manifest'][renditionalias]['currentadbreak']:
+        adbreakid = monitorinfo['manifest'][renditionalias]['currentadbreak']['id']
+        monitorinfo['reporting']['adbreaks'][adbreakid]['segmentsduration'] = monitorinfo['reporting']['adbreaks'][adbreakid]['segmentsduration'] + segment['dsec']
     if new:
       # Check if found last segment
       if not monitorinfo['manifest'][renditionalias]['foundlastsegment']:
