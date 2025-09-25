@@ -302,7 +302,7 @@ def gothroughsegments(logger, monitorinfo:dict, new:bool=False):
               if 'advertisedduration' in monitorinfo['reporting']['adbreaks'][lastadbreakid].keys() and monitorinfo['reporting']['adbreaks'][lastadbreakid]['advertisedduration'] > 0:
                 monitorinfo['reporting']['adbreaks'][lastadbreakid]['durationdelta'] = round(monitorinfo['reporting']['adbreaks'][lastadbreakid]['segmentsduration'] - monitorinfo['reporting']['adbreaks'][lastadbreakid]['advertisedduration'], 3)
                 utils.addmetric(logger, monitorinfo, 'DurationDelta', abs(monitorinfo['reporting']['adbreaks'][lastadbreakid]['durationdelta']), 'Seconds', [{'Name': 'AdBreakType', 'Value': monitorinfo['reporting']['adbreaks'][lastadbreakid]['type']}])
-                if abs(monitorinfo['reporting']['adbreaks'][lastadbreakid]['durationdelta']) > monitorinfo['config']['endpointconfig']['validations']['custom']['adbreakdurationdelta']:
+                if abs(monitorinfo['reporting']['adbreaks'][lastadbreakid]['durationdelta']) > monitorinfo['config']['endpointconfig']['validations']['custom']['maxadbreakdurationdelta']:
                   logger.warning(f"Ad break duration was {'longer' if monitorinfo['reporting']['adbreaks'][lastadbreakid]['durationdelta'] > 0 else 'shorter'} than advertised by {abs(monitorinfo['reporting']['adbreaks'][lastadbreakid]['durationdelta'])} seconds")
       # Go through all segments
       for segment in segments:
