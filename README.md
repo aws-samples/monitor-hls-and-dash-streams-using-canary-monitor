@@ -1,6 +1,6 @@
 ## Monitor HLS and DASH Streams Using Canary Monitor
 
-**The current version 2 introduces operational and functional improvements. Ad break detection is currently not supported for HLS endpoints.** 
+**Version 2 introduces operational and functional improvements.** 
 
 The canary monitor is a tool, which, like a player, downloads and inspects HLS or DASH manifests from a list of origins at regular intervals. It performs manifest and stream validations, writes logs and stores monitoring reports, sends metrics to AWS CloudWatch and creates CloudWatch dashboards. Optionally it can also download and inspect ad-tracking data for origins like AWS Elemental MediaTailor (EMT) where ad-tracking endpoints are available. It works with various origins, but has been primarily designed to monitor streams originating from AWS Elemental MediaPackage (EMP) and EMT.
 
@@ -39,6 +39,43 @@ An origin endpoint is identified by values in the first 5 columns. Each line sho
 
 Users should create their own monitoring config files based on the default config `configs/default.json` file to match their monitoring requirements. Available HLS rendition identifiers in the config file are `"video", "audio", "subtitles", "*"`, meaning the tool can monitor one or multiple video, audio or subtitle renditions. The list in `adbreaksctesignals` provides an option to list SCTE message signal types, which should be considered as ad break opportunities. Available SCTE message signal types are `"spliceinsert"` (meaning any splice insert is considered an ad break opportunity) or an integer which represents the segmentation type id in decimal, e.g. `52` for `Provider Overlay Placement Opportunity Start` (meaning any splice insert or time signal with this segmentation type id is considered an ad break opportunity). 
 
+Default configuration settings:
+
+```
+{
+  "cwmetrics": true,
+  "loglevel": "debug",
+  "manifests": {
+    "frequency": 5.0,
+    "save": {
+      "local": false
+    },
+    "hlsrenditions": [ "video", "audio" ],
+    "adsegmentprefix": "asset"
+  },
+  "tracking": {
+    "frequency": 6.0,
+    "get": true,
+    "save": {
+      "local": false
+    },
+    "playhead": false,
+    "playheaddelay": 10
+  },
+  "validations": {
+    "perform": true,
+    "custom": {
+      "requiredrenditions": [ "video", "audio" ],
+      "adbreaksctesignals": [ "spliceinsert" ],
+      "checkadbreakscteduration": true,
+      "maxadbreakdurationdelta": 0.5,
+      "maxptsdelta": 0.1
+    }
+  }
+}
+```
+
+
 ## Dynamic Handling of Changes
 
 The canary monitor picks changes in the input CSV files and in the monitoring config files. That means that the monitoring of individual endpoints is started, stopped or updated based on the changes in the `origins` folder CSV files and monintoring parameters are updated based on changes in the config files. Therefore, a user can add or remove origin endpoints and update the endpoint monitoring configuration at any time without stopping and starting the canary monitor itself. With that the canary monitor can run as a service.
@@ -55,21 +92,41 @@ The canary monitor automatically creates or updates CloudWatch dashboards anytim
 
 Common dimensions for all metrics are `Type`, `Technology`, `Workload`, `Endpoint` and `Origin` which identify each endpoint.
 
-| Domain    | Metric Name        | Additional Metric Dimensions   | Description                                                                                                                                      |
-|-----------|--------------------|--------------------------------|--------------------------------------------------------------------------------------------------------------------------------------------------|
-| Manifests | Discontinuity      | Rendition                      | Discontinuity in segments timeline                                                                                                               |
-| Manifests | BufferFillDuration | Rendition                      | Sum of new segment durations in a rolling 20 seconds time window                                                                                 |
-| Manifests | Latency            | RequestType, Rendition         | HTTP request latency in milliseconds                                                                                                             |
-| Manifests | Request            | RequestType, Rendition, Status | HTTP request response with "Status" dimension one of "4xx", "5xx" or "failure"                                                                   |
-| Manifests | PdtDelta           |                                | Difference between program date time of the last segment and current wall clock time. Published for HLS when EXT-X-PROGRAM-DATE-TIME is present. |
-| Manifests | PtsDelta           |                                | Only for DASH. The maximum difference between (t + d - pto)/timescale of last segments in the last period across all segment templates.          |
-| Tracking  | Latency            | RequestType                    | HTTP request latency in milliseconds                                                                                                             |
-| Tracking  | Request            | RequestType, Status            | HTTP request response with "Status" dimension one of "4xx", "5xx" or "failure"                                                                   |
-| Ad breaks | Start              | AdBreakType                    | Start of ad break with "AdBreakType" dimension one of "regular" or "overlay"                                                                     |
-| Ad breaks | AdvertisedDuration | AdBreakType                    | Ad break SCTE duration in seconds with "AdBreakType" dimension one of "regular" or "overlay"                                                     |
-| Ad breaks | SegmentsDuration   | AdBreakType                    | Ad break segments duration sum in seconds with "AdBreakType" dimension one of "regular" or "overlay"                                             |
-| Ad breaks | DurationDelta      | AdBreakType                    | Duration delta between advertised ad break duration and sum of ad break segments with "AdBreakType" dimension one of "regular" or "overlay"      |
-| Ad breaks | AvailNum           | AdBreakType                    | Ad break avail num from SCTE splice insert message with "AdBreakType" dimension one of "regular" or "overlay"                                    |
+| Domain    | Metric Name        | Additional Metric Dimensions   | Description                                                                                                                                                    |
+|-----------|--------------------|--------------------------------|----------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| Manifests | Discontinuity      | Rendition                      | Discontinuity in segments timeline                                                                                                                             |
+| Manifests | BufferFillDuration | Rendition                      | Sum of new segment durations in a rolling 20 seconds time window                                                                                               |
+| Manifests | Latency            | RequestType, Rendition         | HTTP request latency in milliseconds                                                                                                                           |
+| Manifests | Request            | RequestType, Rendition, Status | HTTP request response with "Status" dimension one of "4xx", "5xx" or "failure"                                                                                 |
+| Manifests | PdtDelta           |                                | Only for HLS. Difference between program date time of the last segment and current wall clock time. Published for HLS when EXT-X-PROGRAM-DATE-TIME is present. |
+| Manifests | PtsDelta           |                                | Only for DASH. The maximum difference between (t + d - pto)/timescale of last segments in the last period across all segment templates.                        |
+| Tracking  | Latency            | RequestType                    | HTTP request latency in milliseconds                                                                                                                           |
+| Tracking  | Request            | RequestType, Status            | HTTP request response with "Status" dimension one of "4xx", "5xx" or "failure"                                                                                 |
+| Ad breaks | Start              | AdBreakType                    | Start of ad break with "AdBreakType" dimension one of "regular" or "overlay"                                                                                   |
+| Ad breaks | AdvertisedDuration | AdBreakType                    | Ad break SCTE duration in seconds with "AdBreakType" dimension one of "regular" or "overlay"                                                                   |
+| Ad breaks | SegmentsDuration   | AdBreakType                    | Ad break segments duration sum in seconds with "AdBreakType" dimension one of "regular" or "overlay"                                                           |
+| Ad breaks | DurationDelta      | AdBreakType                    | Duration delta between advertised ad break duration and sum of ad break segments with "AdBreakType" dimension one of "regular" or "overlay"                    |
+| Ad breaks | AvailNum           | AdBreakType                    | Only for DASH. Ad break avail num from SCTE splice insert message with "AdBreakType" dimension one of "regular" or "overlay"                                   |
+
+## Validations
+
+The canary monitor performs several validations and logs warnings when validations fail. Some validations are performed by default, some can be controlled by adjusting values in the config file.
+
+The key validations include:
+
+| Type    | Name                                 | Description                                                                                                                                                                                                                                                                 | Impact      |
+|---------|--------------------------------------|-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|-------------|
+| Default | Stale manifest                       | Occurs when manifest contains no new segments in last 20 seconds                                                                                                                                                                                                            | Playback    |
+| Default | Last segment not found               | Occurs when last known segment is not found in the most recent manifest, e.g. the manifest goes backwards. This can happen when manifests are cached for too long.                                                                                                          | Playback    |
+| Default | Discontinuity                        | Occurs when EXT-X-DISCONTINUITY is found in an HLS manifest. Occurs when "t" value of segment n + 1 does not equal "t" + "d" value of segment n and segments are in the same DASH manifest period.                                                                          | Playback    |
+| Default | Change in multivariant manfiest      | Occurs when HLS multivariant manifest has changed                                                                                                                                                                                                                           | Playback    |
+| Default | Missing availabilityStartTime        | Occurs when availabilityStartTime is missing in DASH manifest                                                                                                                                                                                                               | Playback    |
+| Custom  | Missing rendition                    | Occurs when a rendition listed in "requiredrenditions" is missing                                                                                                                                                                                                           | Playback    |
+| Default | Back to back ad break                | Occurs when a new ad break starts while another ad break is in progress                                                                                                                                                                                                     | Advertising |
+| Default | Multiple segmentation descriptors    | Occurs when manifest ad break decoration contains multiple segmentation descriptors, which can lead to a failure to detect an ad break opportunity                                                                                                                          | Advertising |
+| Custom  | Ad break duration delta              | Occurs when the sum of segment durations between ad break start and end does not match the advertised ad break duration +- value in "maxadbreakdurationdelta". This can happen when an ad break is cut short early or when the manifest ad break decorations are incorrect. | Advertising | 
+| Custom  | Ad break without advertised duration | Occurs when an ad break is advertised without duration and "checkadbreakscteduration" is set                                                                                                                                                                                | Advertising |
+
 
 ## Reporting
 

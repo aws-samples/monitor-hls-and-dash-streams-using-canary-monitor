@@ -115,6 +115,7 @@ def addmetric(logger, monitorinfo, metricname:str, metricvalue, metricunit:str, 
       metricdata['Unit'] = metricunit
     monitorinfo['metrics']['queue'].put(metricdata)
 
+
 # Decode HTTP response
 def decoderesponse(response, utf:bool):
   isgzip = False
@@ -294,3 +295,17 @@ def getmanifestlastupdated(response):
   if 'X-MediaPackage-Manifest-Last-Updated' in response.headers:
     manifestlastupdated = int(response.headers['X-MediaPackage-Manifest-Last-Updated'])
   return manifestlastupdated
+
+
+# Calculate ad break duration delta
+def updateadbreakdurationdelta(logger, monitorinfo, adbreakid, new):
+  try:
+    monitorinfo['reporting']['adbreaks'][adbreakid]['segmentsduration'] = round(monitorinfo['reporting']['adbreaks'][adbreakid]['segmentsduration'], 3)
+    if monitorinfo['reporting']['adbreaks'][adbreakid]['advertisedduration'] > 0:
+      monitorinfo['reporting']['adbreaks'][adbreakid]['durationdelta'] = monitorinfo['reporting']['adbreaks'][adbreakid]['segmentsduration'] - monitorinfo['reporting']['adbreaks'][adbreakid]['advertisedduration']
+      if new:
+        addmetric(logger, monitorinfo, 'DurationDelta', abs(monitorinfo['reporting']['adbreaks'][adbreakid]['durationdelta']), 'Seconds', [{'Name': 'AdBreakType', 'Value': monitorinfo['reporting']['adbreaks'][adbreakid]['type']}])
+        if abs(monitorinfo['reporting']['adbreaks'][adbreakid]['durationdelta']) > monitorinfo['config']['endpointconfig']['validations']['custom']['maxadbreakdurationdelta']:
+          logger.warning(f"Ad break duration was {'longer' if monitorinfo['reporting']['adbreaks'][adbreakid]['durationdelta'] > 0 else 'shorter'} than advertised by {abs(monitorinfo['reporting']['adbreaks'][adbreakid]['durationdelta'])} seconds")
+  except Exception as e:
+    logger.error(f"Error while getting ad break duration delta. Exception: {str(e)} Traceback: {traceback.format_exc()}")

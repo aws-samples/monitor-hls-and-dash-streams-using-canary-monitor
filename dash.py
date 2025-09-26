@@ -119,6 +119,7 @@ def getsegmenttemplateinfo(logger, xmlperiod, monitorinfo):
 def determineifadbreak(logger, xmlperiodid, monitorinfo, periodinfo, observetime):
   adbreakinfo = {
     'observed': observetime,
+    'advertisedduration': 0.0,
     'segmentsduration': 0.0
   }
   try:
@@ -297,13 +298,8 @@ def gothroughsegments(logger, monitorinfo:dict, new:bool=False):
           lastadbreakid = monitorinfo['manifest']['primary']['last']['period'].split('_')[0]
           if lastadbreakid not in period:
             if lastadbreakid in monitorinfo['reporting']['adbreaks'].keys():
-              monitorinfo['reporting']['adbreaks'][lastadbreakid]['segmentsduration'] = round(monitorinfo['reporting']['adbreaks'][lastadbreakid]['segmentsduration'], 3)
+              utils.updateadbreakdurationdelta(logger, monitorinfo, lastadbreakid, new)
               utils.addmetric(logger, monitorinfo, 'SegmentsDuration', monitorinfo['reporting']['adbreaks'][lastadbreakid]['segmentsduration'], 'Seconds', [{'Name': 'AdBreakType', 'Value': monitorinfo['reporting']['adbreaks'][lastadbreakid]['type']}])
-              if 'advertisedduration' in monitorinfo['reporting']['adbreaks'][lastadbreakid].keys() and monitorinfo['reporting']['adbreaks'][lastadbreakid]['advertisedduration'] > 0:
-                monitorinfo['reporting']['adbreaks'][lastadbreakid]['durationdelta'] = round(monitorinfo['reporting']['adbreaks'][lastadbreakid]['segmentsduration'] - monitorinfo['reporting']['adbreaks'][lastadbreakid]['advertisedduration'], 3)
-                utils.addmetric(logger, monitorinfo, 'DurationDelta', abs(monitorinfo['reporting']['adbreaks'][lastadbreakid]['durationdelta']), 'Seconds', [{'Name': 'AdBreakType', 'Value': monitorinfo['reporting']['adbreaks'][lastadbreakid]['type']}])
-                if abs(monitorinfo['reporting']['adbreaks'][lastadbreakid]['durationdelta']) > monitorinfo['config']['endpointconfig']['validations']['custom']['maxadbreakdurationdelta']:
-                  logger.warning(f"Ad break duration was {'longer' if monitorinfo['reporting']['adbreaks'][lastadbreakid]['durationdelta'] > 0 else 'shorter'} than advertised by {abs(monitorinfo['reporting']['adbreaks'][lastadbreakid]['durationdelta'])} seconds")
       # Go through all segments
       for segment in segments:
         if new:
