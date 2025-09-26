@@ -108,6 +108,11 @@ Common dimensions for all metrics are `Type`, `Technology`, `Workload`, `Endpoin
 | Ad breaks | DurationDelta      | AdBreakType                    | Duration delta between advertised ad break duration and sum of ad break segments with "AdBreakType" dimension one of "regular" or "overlay"                    |
 | Ad breaks | AvailNum           | AdBreakType                    | Only for DASH. Ad break avail num from SCTE splice insert message with "AdBreakType" dimension one of "regular" or "overlay"                                   |
 
+Example CloudWatch dashboard dynamically created by the canary monitor tool:
+
+<img width="2543" height="635" alt="image" src="https://github.com/user-attachments/assets/d3e9846a-2cb3-414b-b1c3-19b73c6bd8bc" />
+
+
 ## Validations
 
 The canary monitor performs several validations and logs warnings when validations fail. Some validations are performed by default, some can be controlled by adjusting values in the config file.
