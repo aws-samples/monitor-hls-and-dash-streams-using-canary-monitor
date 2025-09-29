@@ -291,17 +291,18 @@ def monitor(endpointidentifier:tuple, endpointconfig:dict, stopflag, changeflag,
       if monitorinfo['config']['type'] == 'live':
         # If DASH
         if monitorinfo['config']['technology'] == 'dash':
-          if response:
-            # Perform validations
-            if endpointconfig['validations']['perform']:
+          if endpointconfig['validations']['perform']:
+            if response:
+              # Perform validations
               manifestlastupdated = utils.getmanifestlastupdated(response)
               if manifestlastupdated != monitorinfo['manifest']['primary']['headers']['manifestlastupdated'] or manifestlastupdated == 0:
                 dash.monitor(logger, monitorinfo, utils.decoderesponse(response, False))
               monitorinfo['manifest']['primary']['headers']['manifestlastupdated'] = manifestlastupdated
-          # Check for staleness
-          monitorinfo['manifest']['primary']['buffer']['window'][requesttime] = monitorinfo['manifest']['primary']['new']['duration']
-          if requesttime - monitorinfo['state']['starttimeperf'] > max(monitorinfo['manifest']['primary']['buffer']['size'], monitorinfo['config']['endpointconfig']['manifests']['frequency']):
-            utils.checkforstaleness(logger, monitorinfo, requesttime, 'primary', 'multi')
+            # Update new duration
+            monitorinfo['manifest']['primary']['buffer']['window'][requesttime] = monitorinfo['manifest']['primary']['new']['duration']
+            # Check for staleness
+            if requesttime - monitorinfo['state']['starttimeperf'] > max(monitorinfo['manifest']['primary']['buffer']['size'], monitorinfo['config']['endpointconfig']['manifests']['frequency']):
+              utils.checkforstaleness(logger, monitorinfo, requesttime, 'primary', 'multi')
         # If HLS
         elif monitorinfo['config']['technology'] == 'hls':
           if response:

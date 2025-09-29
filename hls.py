@@ -219,9 +219,9 @@ def monitor(renditionid, url:str, rendition:dict, monitorinfo:dict, primary:bool
       # Save manifest response
       if monitorinfo['config']['endpointconfig']['manifests']['save']['local']:
         utils.saveresponse(logger, response, monitorinfo, 'manifests', "", False, renditionid)
-      if response:
-        # Perform validations
-        if monitorinfo['config']['endpointconfig']['validations']['perform']:
+      if monitorinfo['config']['endpointconfig']['validations']['perform']:
+        if response:
+          # Perform validations
           manifestlastupdated = utils.getmanifestlastupdated(response)
           if manifestlastupdated != monitorinfo['manifest'][renditionalias]['headers']['manifestlastupdated'] or manifestlastupdated == 0:
             responselines = utils.decoderesponse(response, True).splitlines()
@@ -233,10 +233,11 @@ def monitor(renditionid, url:str, rendition:dict, monitorinfo:dict, primary:bool
               getsegmentinfo(logger, renditionalias, responselines, monitorinfo)
               gothroughsegments(logger, renditionalias, renditionid, monitorinfo, True)
           monitorinfo['manifest'][renditionalias]['headers']['manifestlastupdated'] = manifestlastupdated
-      # Check for staleness
-      monitorinfo['manifest'][renditionalias]['buffer']['window'][requesttime] = monitorinfo['manifest'][renditionalias]['new']['duration']
-      if requesttime - monitorinfo['state']['starttimeperf'] > max(monitorinfo['manifest'][renditionalias]['buffer']['size'], monitorinfo['config']['endpointconfig']['manifests']['frequency']):
-        utils.checkforstaleness(logger, monitorinfo, requesttime, renditionalias, renditionid)
+        # Update new duration
+        monitorinfo['manifest'][renditionalias]['buffer']['window'][requesttime] = monitorinfo['manifest'][renditionalias]['new']['duration']
+        # Check for staleness
+        if requesttime - monitorinfo['state']['starttimeperf'] > max(monitorinfo['manifest'][renditionalias]['buffer']['size'], monitorinfo['config']['endpointconfig']['manifests']['frequency']):
+          utils.checkforstaleness(logger, monitorinfo, requesttime, renditionalias, renditionid)
       # Wait
       utils.wait(logger, requesttime, monitorinfo['config']['endpointconfig']['manifests']['frequency'])
   except Exception as e:
