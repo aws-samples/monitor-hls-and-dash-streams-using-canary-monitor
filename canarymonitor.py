@@ -317,9 +317,10 @@ def monitor(endpointidentifier:tuple, endpointconfig:dict, stopflag, changeflag,
           publishmetrics(logger, monitorinfo)
           monitorinfo['metrics']['lastpublishtime'] = time.perf_counter()
       # Save report
-      if requesttime - monitorinfo['reporting']['lastsavetime'] > monitorinfo['reporting']['saveinterval']:
-        savereport(logger, monitorinfo, False)
-        monitorinfo['reporting']['lastsavetime'] = requesttime
+      if endpointconfig['validations']['perform']:
+        if requesttime - monitorinfo['reporting']['lastsavetime'] > monitorinfo['reporting']['saveinterval']:
+          savereport(logger, monitorinfo, False)
+          monitorinfo['reporting']['lastsavetime'] = requesttime
       # Wait
       utils.wait(logger, requesttime, endpointconfig['manifests']['frequency'])
   except KeyboardInterrupt:
