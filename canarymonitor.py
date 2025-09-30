@@ -637,6 +637,7 @@ if __name__ == '__main__':
         for item in inputorconfigchanges:
           mainlogger.info(f"Input or config has changed, {item['change']}: {item['filename']}")
         mainconfig['endpoints'] = updateworkers()
+        mainlogger.debug(f"Now monitoring {len(mainconfig)} endpoints")
         if len(mainconfig['changedworkloads']) > 0 and not args.no_aws:
           createdashboards()
         mainconfig['changedworkloads'].clear()

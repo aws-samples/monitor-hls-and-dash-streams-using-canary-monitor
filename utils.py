@@ -6,6 +6,7 @@ import time
 import urllib3
 import logging
 import threefive
+import random
 
 # Custom exceptions
 class HTTPNon200Error(Exception):
@@ -232,7 +233,8 @@ def wait(logger, starttime:float, duration:float):
   if waittime > 0:
     time.sleep(waittime)
   else:
-    logger.warning(f"Negative wait time between manifest requests")
+    time.sleep(random.uniform(0,5))
+    logger.warning(f"Negative wait time between manifest requests, will back off")
 
 
 # Tracking
