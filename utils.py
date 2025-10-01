@@ -22,7 +22,7 @@ loglevels = {
 }
 
 # Configure HTTP requests
-http = urllib3.PoolManager(num_pools=128, maxsize=512, timeout=3, retries=urllib3.Retry(total=0, redirect=True))
+http = urllib3.PoolManager(num_pools=2, maxsize=10, timeout=3, retries=urllib3.Retry(total=0, redirect=True))
 
 # SCTE messages
 segmentationmessagemap = {
