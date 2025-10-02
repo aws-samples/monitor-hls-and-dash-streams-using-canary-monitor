@@ -26,8 +26,7 @@
     "yAxis": {
       "left": {
         "showUnits": false,
-        "label": "",
-        "min": 0
+        "label": ""
       },
       "right": {
         "showUnits": false

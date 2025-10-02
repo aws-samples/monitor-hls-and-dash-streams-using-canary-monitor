@@ -33,7 +33,8 @@
       "horizontal": [
         {
           "label": "Threshold",
-          "value": -20
+          "value": -20,
+          "fill": "below"
         }
       ]
     },
