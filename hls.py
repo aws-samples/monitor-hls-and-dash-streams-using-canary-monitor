@@ -185,8 +185,11 @@ def gothroughsegments(logger, renditionalias, renditionid, monitorinfo:dict, new
         monitorinfo['reporting']['adbreaks'][adbreakid]['segmentsduration'] = monitorinfo['reporting']['adbreaks'][adbreakid]['segmentsduration'] + segment['dsec']
     if new:
       # Check if found last segment
-      if not monitorinfo['manifest'][renditionalias]['foundlastsegment']:
+      monitorinfo['manifest'][renditionalias]['lastsegmentnotfoundcount'] = 0 if monitorinfo['manifest'][renditionalias]['foundlastsegment'] else monitorinfo['manifest'][renditionalias]['lastsegmentnotfoundcount'] + 1
+      if 0 < monitorinfo['manifest'][renditionalias]['lastsegmentnotfoundcount'] < 3:
         logger.warning(f"Last segment not found")
+      elif monitorinfo['manifest'][renditionalias]['lastsegmentnotfoundcount'] == 3:
+        monitorinfo['state']['restart'] = (True, 'Last segment not found in 3 consecutive manifest requests')
       if renditionalias == 'primary':
         # Check PDT delta
         if monitorinfo['manifest'][renditionalias]['last']['segment']['pdt']:
@@ -309,8 +312,8 @@ def startthreads(logger, monitorinfo:dict, response):
 # Stop and start new HLS monitoring treads
 def restartthreads(logger, monitorinfo:dict, response):
   try:
-    if monitorinfo['manifest']['multi']['lasthash']:
-      logger.warning(f"Manifest has changed, will restart monitoring threads")
+    if monitorinfo['state']['restart'][1]:
+      logger.info(f"Restarting monitoring, reason: {monitorinfo['state']['restart'][1]}")
     # Stop HLS monitoring threads
     monitorinfo['state']['stop'].set()
     for thread in monitorinfo['state']['threads'].keys():
@@ -319,6 +322,8 @@ def restartthreads(logger, monitorinfo:dict, response):
     monitorinfo['state']['stop'].clear()
     # Start new HLS monitoring threads
     startthreads(logger, monitorinfo, response)
+    # Clear state
+    monitorinfo['state']['restart'] = (False, '')
   except Exception as e:
     logger.error(f"Error restarting threads. Exception: {str(e)} Traceback: {traceback.format_exc()}")
 

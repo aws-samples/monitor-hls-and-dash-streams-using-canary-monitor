@@ -233,7 +233,8 @@ def monitor(endpointidentifier:tuple, endpointconfig:dict, stopflag, changeflag,
       'startdatetime': datetime.now(timezone.utc),
       'threads': {},
       'lock': threading.Lock(),
-      'stop': threading.Event()
+      'stop': threading.Event(),
+      'restart': (False, '')
     },
     'metrics': {
       'lastpublishtime': time.perf_counter() - random.uniform(0,15),
@@ -309,8 +310,11 @@ def monitor(endpointidentifier:tuple, endpointconfig:dict, stopflag, changeflag,
             # Start threads at first, then restart threads if multivariant manifest has changed
             manifesthash = hashlib.md5(utils.decoderesponse(response, False)).hexdigest()
             if manifesthash != monitorinfo['manifest']['multi']['lasthash']:
-              hls.restartthreads(logger, monitorinfo, utils.decoderesponse(response, True))
+              monitorinfo['state']['restart'] = (True, 'Multivariant manifest has changed') if monitorinfo['manifest']['multi']['lasthash'] else (True, '')
             monitorinfo['manifest']['multi']['lasthash'] = manifesthash
+            # Check if need to restart monitoring
+            if monitorinfo['state']['restart'][0]:
+              hls.restartthreads(logger, monitorinfo, utils.decoderesponse(response, True))
       # Publish metrics to CW
       if endpointconfig['cwmetrics'] and not monitorinfo['args'].no_aws:
         if requesttime - monitorinfo['metrics']['lastpublishtime'] > monitorinfo['metrics']['publishinterval']:
