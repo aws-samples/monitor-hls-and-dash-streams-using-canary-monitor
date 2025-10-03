@@ -5,3 +5,4 @@ Jinja2
 boto3
 botocore
 urllib3
+isodate
