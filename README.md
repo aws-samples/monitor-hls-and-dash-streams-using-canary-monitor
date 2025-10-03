@@ -17,6 +17,7 @@ Python 3.9 or newer with following libraries:
 - boto3
 - botocore
 - urllib3
+- isodate
 
 You can use `pip install -r requirements.txt` to install all required libraries at once.
 
@@ -234,9 +235,9 @@ WantedBy=multi-user.target
 3. sudo systemctl daemon-reload
 4. sudo systemctl start canarymonitor
 
-To enable start of canary monitor at boot: 
+To confirm that canary monitor is running check the logs/service.log file. If you don't see any logs or canary is not starting, check journal logs for errors with
 
-5. sudo systemctl enable canarymonitor.service
+sudo journalctl -u canarymonitor
 ```
 
 ## License
