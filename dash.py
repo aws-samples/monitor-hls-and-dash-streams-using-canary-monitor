@@ -35,6 +35,7 @@ def getsegmentinfo(logger, monitorinfo:dict, segmenttemplate, xmlperiod, allsegm
     availabilitystarttime = monitorinfo['manifest']['primary'].get('availabilitystarttime', None)
     periodstart = isodate.parse_duration(xmlperiod.get('start', 'PT0S')).total_seconds()
     timescale = int(segmenttemplate['xmlsegmenttemplate'].get('timescale', 1))
+    segmentnumber = int(segmenttemplate['xmlsegmenttemplate'].get('startNumber', 0))
     pto = int(segmenttemplate['xmlsegmenttemplate'].get('presentationTimeOffset', 0))
     xmlsegmenttimeline = segmenttemplate['xmlsegmenttemplate'].find('default:SegmentTimeline', ns)
     for element in xmlsegmenttimeline:
@@ -49,21 +50,23 @@ def getsegmentinfo(logger, monitorinfo:dict, segmenttemplate, xmlperiod, allsegm
           if not onlyvalidation:
             if monitorinfo['manifest']['primary']['foundlastsegment'] or allsegments:
               segment = {
+                'n': segmentnumber,
                 'd': d,
-                'dsec': round(d / timescale, 3),
+                'dsec': d / timescale,
                 't': compt,
                 'nextt': compt + d,
-                'pts': round(periodstart + (compt - pto) / timescale, 3),
-                'ast+pts': (availabilitystarttime + timedelta(seconds=periodstart + (compt - pto) / timescale)).strftime('%Y-%m-%d %H:%M:%S.%f%z') if availabilitystarttime else None
+                'pts': periodstart + (compt - pto) / timescale,
+                'ast+pts': availabilitystarttime + timedelta(seconds=periodstart + (compt - pto) / timescale) if availabilitystarttime else None
               }
               monitorinfo['manifest']['primary']['new']['segments'].setdefault(periodid, []).append(segment)
               if not allsegments:
-                logger.debug(f"Found new segment in period {periodid}: {segment}")
+                logger.debug(f"Found new segment in period {periodid}: {utils.printdictionary(logger, segment)}")
             else:
               if periodid == monitorinfo['manifest']['primary']['last']['period']:
                 if compt == monitorinfo['manifest']['primary']['last']['segment']['t']:
                   monitorinfo['manifest']['primary']['foundlastsegment'] = True
           compt = compt + d
+          segmentnumber = segmentnumber + 1
     return round(periodstart + (compt - pto) / timescale, 3)
   except Exception as e:
     logger.error(f"Error finding new segments in period {periodid}. Exception: {str(e)} Traceback: {traceback.format_exc()} Segmenttemplate: {et.tostring(segmenttemplate['xmlsegmenttemplate'], encoding='unicode')}")
@@ -332,8 +335,9 @@ def gothroughsegments(logger, monitorinfo:dict, new:bool=False):
 
 
 # Get availabtilityStartTime from manifest
-def getavailabilitystarttime(logger, xmlroot, monitorinfo:dict):
+def gethighlevelmetadata(logger, xmlroot, monitorinfo:dict):
   try:
+    # Availability start time
     xmlavailabilitystarttime = xmlroot.get('availabilityStartTime')
     if xmlavailabilitystarttime:
       if xmlavailabilitystarttime.endswith('Z'):
@@ -341,6 +345,8 @@ def getavailabilitystarttime(logger, xmlroot, monitorinfo:dict):
       monitorinfo['manifest']['primary']['availabilitystarttime'] = datetime.fromisoformat(xmlavailabilitystarttime)
     else:
       logger.warning(f"Missing availabilityStartTime in manifest")
+    # Suggested presentation delay
+    monitorinfo['manifest']['primary']['suggestedpresentationdelay'] = isodate.parse_duration(xmlroot.get('suggestedPresentationDelay', 'PT0S')).total_seconds()
   except Exception as e:
     logger.error(f"Error getting availabilityStartTime. Exception: {str(e)} Traceback: {traceback.format_exc()}")
 
@@ -355,7 +361,8 @@ def monitor(logger, monitorinfo:dict, response:bytes):
     if xmlroot is not None:
       if xmlmpdtype == 'dynamic':
         xmlperiods = xmlroot.findall('default:Period', ns)
-        getavailabilitystarttime(logger, xmlroot, monitorinfo)
+        gethighlevelmetadata(logger, xmlroot, monitorinfo)
+
         if not monitorinfo['manifest']['primary']['last']['segment']:
           # Go through all periods
           for xmlperiod in xmlperiods:

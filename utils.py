@@ -45,6 +45,23 @@ segmentationmessagemap = {
 }
 
 
+# Recursively convert dictionary values for better logging
+def printdictionary(logger, toprint:dict):
+  try:
+    if isinstance(toprint, dict):
+      return {k: printdictionary(logger, v) for k, v in toprint.items()}
+    elif isinstance(toprint, datetime):
+      return toprint.isoformat()
+    elif isinstance(toprint, list):
+      return str(toprint)
+    elif isinstance(toprint, float):
+      return round(toprint, 3)
+    else:
+      return toprint
+  except Exception as e:
+    logger.error(f"Error during priting of dictionary. Exception: {str(e)} Traceback: {traceback.format_exc()}")
+
+
 # Decode base64 or hex SCTE string and return a decoded message
 def decodesctestring(logger, scte:str):
   logger.debug(f"Decoding SCTE message '{scte}'")
