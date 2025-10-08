@@ -25,7 +25,8 @@
       "adbreaksctesignals": [ "spliceinsert" ],
       "checkadbreakscteduration": true,
       "maxadbreakdurationdelta": 0.5,
-      "maxptsdelta": 0.1
+      "maxptsdelta": 0.1,
+      "maxfuturesegmentavailability": 3
     }
   }
 }

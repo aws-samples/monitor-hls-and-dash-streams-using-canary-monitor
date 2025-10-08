@@ -317,6 +317,11 @@ def gothroughsegments(logger, monitorinfo:dict, new:bool=False):
           if segment['t'] != monitorinfo['manifest']['primary']['last']['segment']['nextt']:
             logger.warning(f"Discontinuity")
             utils.addmetric(logger, monitorinfo, 'Discontinuity', 1, 'Count', [{'Name': 'Rendition', 'Value': "multi"}])
+          # Check for segment availability delta
+          if segment['ast+pts'] is not None:
+            availabilitydelta = round((segment['ast+pts'] - monitorinfo['manifest']['primary']['manifestrequesttime']).total_seconds(), 3)
+            if availabilitydelta > monitorinfo['config']['endpointconfig']['validations']['custom']['maxfuturesegmentavailability']:
+              logger.warning(f"Segment availability time (availabilityStartTime + period start + (t – presentationTimeOffset) / timescale) is {availabilitydelta} seconds in the future, which is more than the configured 'maxfuturesegmentavailability' threshold of {monitorinfo['config']['endpointconfig']['validations']['custom']['maxfuturesegmentavailability']}")
         # Update last segment
         monitorinfo['manifest']['primary']['last']['segment'] = segment.copy()
       # Update last period
@@ -362,7 +367,6 @@ def monitor(logger, monitorinfo:dict, response:bytes):
       if xmlmpdtype == 'dynamic':
         xmlperiods = xmlroot.findall('default:Period', ns)
         gethighlevelmetadata(logger, xmlroot, monitorinfo)
-
         if not monitorinfo['manifest']['primary']['last']['segment']:
           # Go through all periods
           for xmlperiod in xmlperiods:

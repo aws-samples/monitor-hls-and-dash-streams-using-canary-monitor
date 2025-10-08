@@ -292,6 +292,7 @@ def monitor(endpointidentifier:tuple, endpointconfig:dict, stopflag, changeflag,
       if monitorinfo['config']['type'] == 'live':
         # If DASH
         if monitorinfo['config']['technology'] == 'dash':
+          monitorinfo['manifest']['primary']['manifestrequesttime'] = datetime.now(timezone.utc)
           if endpointconfig['validations']['perform']:
             if response:
               # Perform validations
