@@ -214,6 +214,14 @@ def initializemonitor(monitorinfo:dict, technology:str, renditionalias:str=''):
           'buffer': {
             'window': {},
             'size': 20.0
+          },
+          'consistency': {
+            'previous': {
+              'periods': []
+            },
+            'current': {
+              'periods': []
+            }
           }
         }
       }

@@ -283,6 +283,7 @@ def monitor(endpointidentifier:tuple, endpointconfig:dict, stopflag, changeflag,
         monitorinfo['manifest']['primary']['foundlastsegment'] = False
         monitorinfo['manifest']['primary']['new']['segments'].clear()
         monitorinfo['manifest']['primary']['new']['duration'] = 0
+        monitorinfo['manifest']['primary']['consistency']['current']['periods'].clear()
       # Request manifest
       logger.debug(f"Requesting manifest")
       response = utils.request(logger, 'GET', endpointconfig['manifesturl'], 'manifest', 'multi', monitorinfo)

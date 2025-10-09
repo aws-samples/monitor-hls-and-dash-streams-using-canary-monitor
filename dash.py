@@ -356,6 +356,20 @@ def gethighlevelmetadata(logger, xmlroot, monitorinfo:dict):
     logger.error(f"Error getting availabilityStartTime. Exception: {str(e)} Traceback: {traceback.format_exc()}")
 
 
+def checkmanifestconsistency(logger, monitorinfo:dict):
+  try:
+    foundoverlappingperiodid = False
+    for item in monitorinfo['manifest']['primary']['consistency']['previous']['periods']:
+      if foundoverlappingperiodid:
+        if item not in monitorinfo['manifest']['primary']['consistency']['current']['periods']:
+          logger.warning(f"Manifest is inconsistent, pervious periods: {monitorinfo['manifest']['primary']['consistency']['previous']['periods']}, current periods: {monitorinfo['manifest']['primary']['consistency']['current']['periods']}")
+      elif item in monitorinfo['manifest']['primary']['consistency']['current']['periods']:
+        foundoverlappingperiodid = True
+    monitorinfo['manifest']['primary']['consistency']['previous']['periods'] = monitorinfo['manifest']['primary']['consistency']['current']['periods'].copy()
+  except Exception as e:
+    logger.error(f"Error during manifest consistency check. Exception: {str(e)} Traceback: {traceback.format_exc()}")
+
+
 # Dash monitor
 def monitor(logger, monitorinfo:dict, response:bytes):
   ns = {'default': 'urn:mpeg:dash:schema:mpd:2011'}
@@ -380,14 +394,18 @@ def monitor(logger, monitorinfo:dict, response:bytes):
         else:
           # Go through last and any new periods
           for xmlperiod in xmlperiods:
-            if xmlperiod.get('id', '') == monitorinfo['manifest']['primary']['last']['period'] or monitorinfo['manifest']['primary']['foundlastsegment']:
+            xmlperiodid = xmlperiod.get('id', '')
+            if xmlperiodid == monitorinfo['manifest']['primary']['last']['period'] or monitorinfo['manifest']['primary']['foundlastsegment']:
               # If this is a new period
               if monitorinfo['manifest']['primary']['foundlastsegment']:
                 getperiodinfo(logger, xmlperiod, monitorinfo)
               segmenttemplates, primarysegmenttemplate = getsegmenttemplateinfo(logger, xmlperiod, monitorinfo)
               getsegmentinfo(logger, monitorinfo, primarysegmenttemplate, xmlperiod, False, False)
               gothroughsegmenttemplatesofperiod(logger, monitorinfo, xmlperiod, segmenttemplates)
+            # Collect period ids for manifest consistency check
+            monitorinfo['manifest']['primary']['consistency']['current']['periods'].append(xmlperiodid)
           gothroughsegments(logger, monitorinfo, True)
+          checkmanifestconsistency(logger, monitorinfo)
       else:
         logger.warning(f"Manifest type is '{xmlmpdtype}', should be 'dynamic'")
     else:
