@@ -328,7 +328,7 @@ def getmanifestlastupdated(response):
 def updateadbreakdurationdelta(logger, monitorinfo, adbreakid, new):
   try:
     monitorinfo['reporting']['adbreaks'][adbreakid]['segmentsduration'] = round(monitorinfo['reporting']['adbreaks'][adbreakid]['segmentsduration'], 3)
-    if monitorinfo['reporting']['adbreaks'][adbreakid]['advertisedduration'] > 0:
+    if monitorinfo['reporting']['adbreaks'][adbreakid]['advertisedduration'] is not None and monitorinfo['reporting']['adbreaks'][adbreakid]['advertisedduration'] > 0:
       monitorinfo['reporting']['adbreaks'][adbreakid]['durationdelta'] = round(monitorinfo['reporting']['adbreaks'][adbreakid]['segmentsduration'] - monitorinfo['reporting']['adbreaks'][adbreakid]['advertisedduration'], 3)
       if new:
         addmetric(logger, monitorinfo, 'DurationDelta', abs(monitorinfo['reporting']['adbreaks'][adbreakid]['durationdelta']), 'Seconds', [{'Name': 'AdBreakType', 'Value': monitorinfo['reporting']['adbreaks'][adbreakid]['type']}])
