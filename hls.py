@@ -106,14 +106,15 @@ def startadbreak(logger, segment, monitorinfo:dict, new, segmentadbreakinfo:dict
       'advertisedduration': segmentadbreakinfo['durationfromtag'],
       'segmentsduration': 0.0,
       'durationdelta': None,
-      'type': 'regular',
+      'type': segmentadbreakinfo['adbreaktype'],
       'scte': segmentadbreakinfo.get('decodedscte', None)
     }
     # Check for nested ad break
     if monitorinfo['manifest']['primary']['currentadbreak']:
-      logger.warning(f"New ad break started without proper ending of previous ad break")
-    # Send metrics for ad break start and advertised duration if present
+      logger.warning(f"A001: New ad break started without proper ending of previous ad break")
+      monitorinfo['reporting']['validations']['failures'].add('A001')
     if new:
+      # Send metrics for ad break start and advertised duration if present
       utils.addmetric(logger, monitorinfo, 'Start', 1, 'Count', [{'Name': 'AdBreakType', 'Value': adbreakinfo['type']}])
       if (adbreakinfo['advertisedduration'] is None or adbreakinfo['advertisedduration'] == 0) and monitorinfo['config']['origin'] != 'emt':
         if monitorinfo['config']['endpointconfig']['validations']['custom']['checkadbreakscteduration']:
@@ -150,15 +151,17 @@ def gothroughsegments(logger, renditionalias, renditionid, monitorinfo:dict, new
         if renditionalias == 'primary':
           if monitorinfo['config']['origin'] != 'emt':
             if tag == 'EXT-X-CUE-OUT':
-              scteinfo = {
+              segmentadbreakinfo = {
+                'adbreaktype': 'regular',
                 'daterange': False,
-                'duration': parsetag(logger, tag, value)
+                'durationfromtag': parsetag(logger, tag, value)
               }
-              startadbreak(logger, segment, monitorinfo, new, scteinfo)
+              startadbreak(logger, segment, monitorinfo, new, segmentadbreakinfo)
             elif tag == 'EXT-X-DATERANGE' and 'SCTE35-OUT=' in value:
               parsedtag = parsetag(logger, tag, value)
               duration = parsedtag.get('DURATION') if 'DURATION' in parsedtag.keys() else parsedtag.get('PLANNED-DURATION')
               segmentadbreakinfo = {
+                'adbreaktype': 'regular',
                 'daterange': True,
                 'daterangeid': parsedtag.get('ID', ''),
                 'durationfromtag': float(duration) if duration else None,
@@ -171,7 +174,8 @@ def gothroughsegments(logger, renditionalias, renditionid, monitorinfo:dict, new
                 if utils.checkifsignalisadbreak(logger, monitorinfo, segmentadbreakinfo):
                   startadbreak(logger, segment, monitorinfo, new, segmentadbreakinfo)
                 else:
-                  logger.warning(f"Segment has SCTE35-OUT deocration, but SCTE message type is not one of {monitorinfo['config']['endpointconfig']['validations']['custom']['adbreaksctesignals']}")
+                  logger.warning(f"A005: Found ad break decoration, but SCTE message type is not one of {monitorinfo['config']['endpointconfig']['validations']['custom']['adbreaksctesignals']}: {segmentadbreakinfo['decodedscte']}")
+                  monitorinfo['reporting']['validations']['failures'].add('A005')
             elif tag == 'EXT-X-CUE-IN':
               if monitorinfo['manifest']['primary']['currentadbreak']:
                 endadbreak(logger, segment, monitorinfo, new)

@@ -179,7 +179,10 @@ def savereport(logger, monitorinfo, final:bool):
       reportfilepath = reportfilepathfinal
     reportfilepath.parent.mkdir(parents=True, exist_ok=True)
     with reportfilepath.open('w') as file:
-      file.write(json.dumps({'adbreaks': monitorinfo['reporting']['adbreaks'], 'periods': monitorinfo['reporting']['periods']}, indent=2))
+      if monitorinfo['config']['technology'] == 'hls':
+        file.write(json.dumps({'adbreaks': monitorinfo['reporting']['adbreaks'], 'validationfailures': list(monitorinfo['reporting']['validations']['failures'])}, indent=2))
+      else:
+        file.write(json.dumps({'adbreaks': monitorinfo['reporting']['adbreaks'], 'periods': monitorinfo['reporting']['periods'], 'validationfailures': list(monitorinfo['reporting']['validations']['failures'])}, indent=2))
       logger.debug(f"Saved report to {reportfilepath}")
   except Exception as e:
     logger.error(f"Error updating worker endpoint configuration. Exception: {str(e)} Traceback: {traceback.format_exc()}")
@@ -245,7 +248,10 @@ def monitor(endpointidentifier:tuple, endpointconfig:dict, stopflag, changeflag,
       'lastsavetime': time.perf_counter() - random.uniform(0,15),
       'saveinterval': 15,
       'adbreaks': {},
-      'periods': {}
+      'periods': {},
+      'validations': {
+        'failures': set()
+      }
     }
   }
   if monitorinfo['config']['technology'] == 'dash':
