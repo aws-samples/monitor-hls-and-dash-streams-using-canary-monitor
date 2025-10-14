@@ -73,7 +73,18 @@ def decodesctestring(logger, scte:str):
     if cue.command.command_type == 5:
       sctemessage['type'] = 'spliceinsert'
       if cue.command.out_of_network_indicator:
+        # cue.show()
         sctemessage['outofnetwork'] = True
+        if cue.command.splice_event_id is not None:
+          sctemessage['spliceeventid'] = int(cue.command.splice_event_id)
+        if cue.command.splice_immediate_flag is not None:
+          sctemessage['spliceimmediate'] = bool(cue.command.splice_immediate_flag)
+        if cue.command.break_duration is not None:
+          sctemessage['duration'] = float(cue.command.break_duration)
+        if cue.command.avail_num is not None:
+          sctemessage['availnum'] = int(cue.command.avail_num)
+
+
     elif cue.command.command_type == 6:
       sctemessage['type'] = 'timesignal'
     for descriptor in cue.descriptors:
@@ -232,7 +243,6 @@ def initializemonitor(monitorinfo:dict, technology:str, renditionalias:str=''):
         'mediasequence': 0,
         'foundlastsegment': False,
         'lastsegmentnotfoundcount': 0,
-        'adbreaks': {},
         'currentadbreak': None,
         'headers': {
           'manifestlastupdated': 0
@@ -336,3 +346,24 @@ def updateadbreakdurationdelta(logger, monitorinfo, adbreakid, new):
           logger.warning(f"Ad break duration was {'longer' if monitorinfo['reporting']['adbreaks'][adbreakid]['durationdelta'] > 0 else 'shorter'} than advertised by {abs(monitorinfo['reporting']['adbreaks'][adbreakid]['durationdelta'])} seconds")
   except Exception as e:
     logger.error(f"Error while getting ad break duration delta. Exception: {str(e)} Traceback: {traceback.format_exc()}")
+
+
+# Respond with a tuple that confirms if SCTE signal is one of ad break opportunity signals
+def checkifsignalisadbreak(logger, monitorinfo:dict, scteinfo:str):
+  isadbreak = False
+  try:
+    for adbreaksignal in monitorinfo['config']['endpointconfig']['validations']['custom']['adbreaksctesignals']:
+      if isinstance(adbreaksignal, int) or adbreaksignal.isdigit():
+        adbreaksignal = int(adbreaksignal)
+        if 'descriptors' in scteinfo['decodedscte'].keys():
+          for descriptor in scteinfo['decodedscte']['descriptors']:
+            if 'segmentationtype' in descriptor.keys():
+              if descriptor['segmentationtype'] == adbreaksignal:
+                isadbreak = True
+      else:
+        if 'type' in scteinfo['decodedscte'].keys() and scteinfo['decodedscte']['type'] == adbreaksignal:
+          if 'outofnetwork' in scteinfo['decodedscte'].keys() and scteinfo['decodedscte']['outofnetwork']:
+            isadbreak = True
+  except Exception as e:
+    logger.error(f"Error while checking if SCTE35 signal is ad break opportunity. Exception: {str(e)} Traceback: {traceback.format_exc()}")
+  return isadbreak

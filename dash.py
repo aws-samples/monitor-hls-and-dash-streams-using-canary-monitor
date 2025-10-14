@@ -362,7 +362,7 @@ def checkmanifestconsistency(logger, monitorinfo:dict):
     for item in monitorinfo['manifest']['primary']['consistency']['previous']['periods']:
       if foundoverlappingperiodid:
         if item not in monitorinfo['manifest']['primary']['consistency']['current']['periods']:
-          logger.warning(f"Periods are inconsistent, previous periods: {monitorinfo['manifest']['primary']['consistency']['previous']['periods']}, current periods: {monitorinfo['manifest']['primary']['consistency']['current']['periods']}")
+          logger.warning(f"Manifests are inconsistent, previous periods: {monitorinfo['manifest']['primary']['consistency']['previous']['periods']}, current periods: {monitorinfo['manifest']['primary']['consistency']['current']['periods']}")
       elif item in monitorinfo['manifest']['primary']['consistency']['current']['periods']:
         foundoverlappingperiodid = True
     monitorinfo['manifest']['primary']['consistency']['previous']['periods'] = monitorinfo['manifest']['primary']['consistency']['current']['periods'].copy()
