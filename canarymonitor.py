@@ -563,7 +563,7 @@ if __name__ == '__main__':
         }
       )
       # Get account id
-      awsaccountid = boto3.client('sts').get_caller_identity().get('Account')
+      # awsaccountid = boto3.client('sts').get_caller_identity().get('Account')
       # CloudWatch
       cloudwatch = boto3.client('cloudwatch', config=config)
       mainlogger.info(f"Configured CloudWatch client in {args.region}")

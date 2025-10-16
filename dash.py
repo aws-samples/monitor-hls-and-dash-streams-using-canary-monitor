@@ -200,17 +200,15 @@ def getperiodinfo(logger, xmlperiod, monitorinfo:dict):
         'observed': observetime,
         'compact': False,
         'isadbreak': False,
-        'spliceinfo': [],
-        'adaptationsets': [],
-        'eventstream': None
+        'spliceinfo': []
       }
       # Adaptations sets
       xmladaptationsets = xmlperiod.findall('default:AdaptationSet', ns)
       for xmladaptationset in xmladaptationsets:
-        periodinfo['adaptationsets'].append({
-          'mimetype': xmladaptationset.get('mimeType', ''),
-          'renditions': len(xmladaptationset.findall('default:Representation', ns))
-        })
+        # periodinfo['adaptationsets'].append({
+        #   'mimetype': xmladaptationset.get('mimeType', ''),
+        #   'renditions': len(xmladaptationset.findall('default:Representation', ns))
+        # })
         xmlsegmenttemplate = xmladaptationset.find('default:SegmentTemplate', ns)
         # Compactness
         if xmlsegmenttemplate is not None and xmlsegmenttemplate.find('default:SegmentTimeline', ns) is not None:
@@ -218,7 +216,7 @@ def getperiodinfo(logger, xmlperiod, monitorinfo:dict):
       # Event stream info
       xmleventstream = xmlperiod.find('default:EventStream', ns)
       if xmleventstream is not None:
-        periodinfo['eventstream'] = et.tostring(xmleventstream, encoding='unicode')
+        # periodinfo['eventstream'] = et.tostring(xmleventstream, encoding='unicode')
         xmlevents = xmleventstream.findall('default:Event', ns)
         for xmlevent in xmlevents:
           xmlspliceinfosection = xmlevent.find('.//{*}SpliceInfoSection')
@@ -279,10 +277,10 @@ def getperiodinfo(logger, xmlperiod, monitorinfo:dict):
       # logger.debug(f"Found {'new ' if monitorinfo['manifest']['primary']['foundlastsegment'] else ''}period {xmlperiodid}: compact={periodinfo['compact']}, adbreak={periodinfo['isadbreak']}{', type=' + adbreakinfo['type'] if 'type' in adbreakinfo.keys() else ''}{', spliceinfo=' + str(periodinfo['spliceinfo']) + ', ' if len(periodinfo['spliceinfo']) > 0 else ''}, adaptation sets={periodinfo['adaptationsets']}")
       logger.debug(f"Found {'new ' if monitorinfo['manifest']['primary']['foundlastsegment'] else ''}period {xmlperiodid}: {periodinfo}")
       # Validate required renditions
-      for requiredrendition in monitorinfo['config']['endpointconfig']['validations']['custom']['requiredrenditions']:
-        found = any(item['mimetype'].startswith(requiredrendition) for item in periodinfo['adaptationsets'])
-        if not found:
-          logger.warning(f"Missing {requiredrendition} rendition")
+      # for requiredrendition in monitorinfo['config']['endpointconfig']['validations']['custom']['requiredrenditions']:
+      #   found = any(item['mimetype'].startswith(requiredrendition) for item in periodinfo['adaptationsets'])
+      #   if not found:
+      #     logger.warning(f"Missing {requiredrendition} rendition")
       # Update manifest period information
       monitorinfo['reporting']['periods'][xmlperiodid] = periodinfo
     except Exception as e:

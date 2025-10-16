@@ -174,7 +174,7 @@ def gothroughsegments(logger, renditionalias, renditionid, monitorinfo:dict, new
                 if utils.checkifsignalisadbreak(logger, monitorinfo, segmentadbreakinfo):
                   startadbreak(logger, segment, monitorinfo, new, segmentadbreakinfo)
                 else:
-                  logger.warning(f"A005: Found ad break decoration, but SCTE message type is not one of {monitorinfo['config']['endpointconfig']['validations']['custom']['adbreaksctesignals']}: {segmentadbreakinfo['decodedscte']}")
+                  logger.warning(f"A005: Found unexpected ad break start SCTE signal {segmentadbreakinfo['decodedscte']}, which is not one of {monitorinfo['config']['endpointconfig']['validations']['custom']['adbreaksctesignals']} from the config file")
                   monitorinfo['reporting']['validations']['failures'].add('A005')
             elif tag == 'EXT-X-CUE-IN':
               if monitorinfo['manifest']['primary']['currentadbreak']:
