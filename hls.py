@@ -196,7 +196,7 @@ def gothroughsegments(logger, renditionalias, renditionid, monitorinfo:dict, new
             if not monitorinfo['manifest']['primary']['currentadbreak']:
               info = {
                 'daterange': False,
-                'duration': None
+                'durationfromtag': None
               }
               startadbreak(logger, segment, monitorinfo, new, info)
           else:
