@@ -195,6 +195,7 @@ def gothroughsegments(logger, renditionalias, renditionid, monitorinfo:dict, new
           if monitorinfo['config']['endpointconfig']['manifests']['adsegmentprefix'] in segment['name']:
             if not monitorinfo['manifest']['primary']['currentadbreak']:
               info = {
+                'adbreaktype': 'regular',
                 'daterange': False,
                 'durationfromtag': None
               }
