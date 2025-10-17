@@ -116,11 +116,12 @@ def startadbreak(logger, segment, monitorinfo:dict, new, segmentadbreakinfo:dict
     if new:
       # Send metrics for ad break start and advertised duration if present
       utils.addmetric(logger, monitorinfo, 'Start', 1, 'Count', [{'Name': 'AdBreakType', 'Value': adbreakinfo['type']}])
-      if (adbreakinfo['advertisedduration'] is None or adbreakinfo['advertisedduration'] == 0) and monitorinfo['config']['origin'] != 'emt':
-        if monitorinfo['config']['endpointconfig']['validations']['custom']['checkadbreakscteduration']:
-          logger.warning(f"Ad break has no duration")
-      else:
+      if adbreakinfo['advertisedduration'] is not None and adbreakinfo['advertisedduration'] > 0:
         utils.addmetric(logger, monitorinfo, 'AdvertisedDuration', adbreakinfo['advertisedduration'], 'Seconds', [{'Name': 'AdBreakType', 'Value': adbreakinfo['type']}])
+      elif monitorinfo['config']['endpointconfig']['validations']['custom']['checkadbreakscteduration']:
+        if monitorinfo['config']['origin'] != 'emt':
+          logger.warning(f"A004: Ad break has no duration")
+          monitorinfo['reporting']['validations']['failures'].add('A004')
     # Upddate reporting
     monitorinfo['reporting']['adbreaks'][segment['msn']] = adbreakinfo
     # Update current ad break
