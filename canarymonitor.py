@@ -303,6 +303,7 @@ def monitor(endpointidentifier:tuple, endpointconfig:dict, stopflag, changeflag,
           if endpointconfig['validations']['perform']:
             if response:
               # Perform validations
+              utils.checkresponseheaders(logger, monitorinfo, response)
               manifestlastupdated = utils.getmanifestlastupdated(response)
               if manifestlastupdated != monitorinfo['manifest']['primary']['headers']['manifestlastupdated'] or manifestlastupdated == 0:
                 dash.monitor(logger, monitorinfo, utils.decoderesponse(response, False))

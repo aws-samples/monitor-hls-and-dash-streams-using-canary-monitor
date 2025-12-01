@@ -257,6 +257,7 @@ def monitor(renditionid, url:str, rendition:dict, monitorinfo:dict, primary:bool
       if monitorinfo['config']['endpointconfig']['validations']['perform']:
         if response:
           # Perform validations
+          utils.checkresponseheaders(logger, monitorinfo, response, renditionalias)
           manifestlastupdated = utils.getmanifestlastupdated(response)
           if manifestlastupdated != monitorinfo['manifest'][renditionalias]['headers']['manifestlastupdated'] or manifestlastupdated == 0:
             responselines = utils.decoderesponse(response, True).splitlines()

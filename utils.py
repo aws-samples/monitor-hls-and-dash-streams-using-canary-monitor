@@ -7,6 +7,7 @@ import urllib3
 import logging
 import threefive
 import random
+import re
 
 # Custom exceptions
 class HTTPNon200Error(Exception):
@@ -212,7 +213,11 @@ def initializemonitor(monitorinfo:dict, technology:str, renditionalias:str=''):
           'foundlastsegment': False,
           'lastsegmentnotfoundcount': 0,
           'headers': {
-            'manifestlastupdated': 0
+            'manifestlastupdated': 0,
+            'activeinput': None,
+            'cmsd': {
+              'n': None
+            }
           },
           'new': {
             'segments': {},
@@ -245,7 +250,11 @@ def initializemonitor(monitorinfo:dict, technology:str, renditionalias:str=''):
         'lastsegmentnotfoundcount': 0,
         'currentadbreak': None,
         'headers': {
-          'manifestlastupdated': 0
+          'manifestlastupdated': 0,
+          'activeinput': None,
+          'cmsd': {
+            'n': None
+          }
         },
         'new': {
           'segments': [],
@@ -332,6 +341,23 @@ def getmanifestlastupdated(response):
   if 'X-MediaPackage-Manifest-Last-Updated' in response.headers:
     manifestlastupdated = int(response.headers['X-MediaPackage-Manifest-Last-Updated'])
   return manifestlastupdated
+
+
+# Check manifest response headers
+def checkresponseheaders(logger, monitorinfo, response, renditionalias='primary'):
+  if 'X-Amzn-Mediapackage-Active-Input' in response.headers:
+    activeinput = int(response.headers['X-Amzn-Mediapackage-Active-Input'])
+    if monitorinfo['manifest'][renditionalias]['headers']['activeinput'] is not None:
+      if monitorinfo['manifest'][renditionalias]['headers']['activeinput'] != activeinput:
+        logger.warning(f"MediaPackage active input changed from {monitorinfo['manifest'][renditionalias]['headers']['activeinput']} to {activeinput}")
+    monitorinfo['manifest'][renditionalias]['headers']['activeinput'] = activeinput
+  if 'CMSD-Static' in response.headers:
+    match = re.search('n="(.*?)"', response.headers['CMSD-Static'])
+    if match:
+      if monitorinfo['manifest'][renditionalias]['headers']['cmsd']['n'] is not None:
+        if monitorinfo['manifest'][renditionalias]['headers']['cmsd']['n'] != match.group(1):
+          logger.warning(f"MediaPackage endpoint changed from {monitorinfo['manifest'][renditionalias]['headers']['cmsd']['n']} to {match.group(1)}")
+      monitorinfo['manifest'][renditionalias]['headers']['cmsd']['n'] = match.group(1)
 
 
 # Calculate ad break duration delta
