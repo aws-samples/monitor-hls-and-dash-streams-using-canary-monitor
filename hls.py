@@ -99,33 +99,23 @@ def getsegmentinfo(logger, renditionalias, responselines, monitorinfo:dict, alls
     logger.error(f"Error getting segment info. Exception: {str(e)} Traceback: {traceback.format_exc()}")
 
 
-def startadbreak(logger, segment, monitorinfo:dict, new, segmentadbreakinfo:dict):
+def startadbreak(logger, segment, monitorinfo:dict, new, adbreak:dict):
   try:
-    adbreakinfo = {
-      'observed': f"{datetime.now(timezone.utc)}" if new else None,
-      'advertisedduration': segmentadbreakinfo['durationfromtag'],
-      'segmentsduration': 0.0,
-      'durationdelta': None,
-      'type': segmentadbreakinfo['adbreaktype'],
-      'scte': segmentadbreakinfo.get('decodedscte', None)
-    }
     # Check for nested ad break
     if monitorinfo['manifest']['primary']['currentadbreak']:
-      logger.warning(f"A001: New ad break started without proper ending of previous ad break")
-      monitorinfo['reporting']['validations']['failures'].add('A001')
+      logger.warning(f"[108] New ad break started without proper ending of previous ad break")
+    # Update current ad break
+    monitorinfo['manifest']['primary']['currentadbreak'] = {'id': segment['msn'], 'daterangeid': adbreak.get('daterangeid', '')}
+    # Update reporting
+    monitorinfo['reporting']['adbreaks'][segment['msn']] = adbreak
     if new:
       # Send metrics for ad break start and advertised duration if present
-      utils.addmetric(logger, monitorinfo, 'Start', 1, 'Count', [{'Name': 'AdBreakType', 'Value': adbreakinfo['type']}])
-      if adbreakinfo['advertisedduration'] is not None and adbreakinfo['advertisedduration'] > 0:
-        utils.addmetric(logger, monitorinfo, 'AdvertisedDuration', adbreakinfo['advertisedduration'], 'Seconds', [{'Name': 'AdBreakType', 'Value': adbreakinfo['type']}])
+      utils.addmetric(logger, monitorinfo, 'Start', 1, 'Count', [{'Name': 'AdBreakType', 'Value': adbreak['type']}])
+      if adbreak['advertisedduration'] is not None and adbreak['advertisedduration'] > 0:
+        utils.addmetric(logger, monitorinfo, 'AdvertisedDuration', adbreak['advertisedduration'], 'Seconds', [{'Name': 'AdBreakType', 'Value': adbreak['type']}])
       elif monitorinfo['config']['endpointconfig']['validations']['custom']['checkadbreakscteduration']:
         if monitorinfo['config']['origin'] != 'emt':
-          logger.warning(f"A004: Ad break has no duration")
-          monitorinfo['reporting']['validations']['failures'].add('A004')
-    # Upddate reporting
-    monitorinfo['reporting']['adbreaks'][segment['msn']] = adbreakinfo
-    # Update current ad break
-    monitorinfo['manifest']['primary']['currentadbreak'] = {'id': segment['msn'], 'daterangeid': segmentadbreakinfo.get('daterangeid', '')}
+          logger.warning(f"[204] Ad break has no duration")
   except Exception as e:
     logger.error(f"Error at ad break start. Exception: {str(e)} Traceback: {traceback.format_exc()}")
 
@@ -152,39 +142,40 @@ def gothroughsegments(logger, renditionalias, renditionid, monitorinfo:dict, new
         if renditionalias == 'primary':
           if monitorinfo['config']['origin'] != 'emt':
             if tag == 'EXT-X-CUE-OUT':
-              segmentadbreakinfo = {
-                'adbreaktype': 'regular',
-                'daterange': False,
-                'durationfromtag': parsetag(logger, tag, value)
+              adbreak = {
+                'observed': f"{datetime.now(timezone.utc)}" if new else None,
+                'advertisedduration': parsetag(logger, tag, value),
+                'segmentsduration': 0.0,
+                'durationdelta': None,
+                'type': 'regular'
               }
-              startadbreak(logger, segment, monitorinfo, new, segmentadbreakinfo)
-            elif tag == 'EXT-X-DATERANGE' and 'SCTE35-OUT=' in value:
-              parsedtag = parsetag(logger, tag, value)
-              duration = parsedtag.get('DURATION') if 'DURATION' in parsedtag.keys() else parsedtag.get('PLANNED-DURATION')
-              segmentadbreakinfo = {
-                'adbreaktype': 'regular',
-                'daterange': True,
-                'daterangeid': parsedtag.get('ID', ''),
-                'durationfromtag': float(duration) if duration else None,
-                'sctestring': parsedtag.get('SCTE35-OUT', None)
-              }
-              if segmentadbreakinfo['sctestring'] is None:
-                startadbreak(logger, segment, monitorinfo, new, segmentadbreakinfo)
-              else:
-                segmentadbreakinfo['decodedscte'] = utils.decodesctestring(logger, segmentadbreakinfo['sctestring'])
-                if utils.checkifsignalisadbreak(logger, monitorinfo, segmentadbreakinfo):
-                  startadbreak(logger, segment, monitorinfo, new, segmentadbreakinfo)
-                else:
-                  logger.warning(f"A005: Found unexpected ad break start SCTE signal {segmentadbreakinfo['decodedscte']}, which is not one of {monitorinfo['config']['endpointconfig']['validations']['custom']['adbreaksctesignals']} from the config file")
-                  monitorinfo['reporting']['validations']['failures'].add('A005')
+              startadbreak(logger, segment, monitorinfo, new, adbreak)
             elif tag == 'EXT-X-CUE-IN':
               if monitorinfo['manifest']['primary']['currentadbreak']:
                 endadbreak(logger, segment, monitorinfo, new)
-            elif tag == 'EXT-X-DATERANGE' and 'SCTE35-OUT=' not in value:
-              if monitorinfo['manifest']['primary']['currentadbreak']:
-                parseddaterange = parsetag(logger, tag, value)
-                if parseddaterange.get('ID', '') == monitorinfo['manifest']['primary']['currentadbreak']['daterangeid']:
-                  endadbreak(logger, segment, monitorinfo, new)
+            elif tag == 'EXT-X-DATERANGE':
+              parseddaterange = parsetag(logger, tag, value)
+              sctestring = parseddaterange.get('SCTE35-OUT', None)
+              if sctestring is not None:
+                if monitorinfo['manifest']['primary']['currentadbreak'].get('id') != segment['msn']:
+                  duration = parseddaterange.get('DURATION') if 'DURATION' in parseddaterange.keys() else parseddaterange.get('PLANNED-DURATION')
+                  adbreak = {
+                    'observed': f"{datetime.now(timezone.utc)}" if new else None,
+                    'sctemessage': {
+                      'raw': sctestring,
+                      'decoded': utils.decodesctestring(logger, sctestring)
+                    },
+                    'advertisedduration': float(duration) if duration else None,
+                    'segmentsduration': 0.0,
+                    'durationdelta': None,
+                    'daterangeid': parseddaterange.get('ID', '')
+                  }
+                  utils.checkifadbreak(logger, monitorinfo, adbreak)
+                  startadbreak(logger, segment, monitorinfo, new, adbreak)
+              elif 'SCTE35-IN=' in value:
+                if monitorinfo['manifest']['primary']['currentadbreak']:
+                  if parseddaterange.get('ID', '') == monitorinfo['manifest']['primary']['currentadbreak']['daterangeid']:
+                    endadbreak(logger, segment, monitorinfo, new)
         # Check for discontinuity
         if tag == 'EXT-X-DISCONTINUITY':
           if new:

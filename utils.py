@@ -65,7 +65,7 @@ def printdictionary(logger, toprint:dict):
 
 # Decode base64 or hex SCTE string and return a decoded message
 def decodesctestring(logger, scte:str):
-  logger.debug(f"Decoding SCTE message '{scte}'")
+  logger.debug(f"Decoding SCTE string '{scte}'")
   sctemessage = {}
   try:
     cue = threefive.Cue(bytes.fromhex(scte[2:])) if scte.startswith('0x') else threefive.Cue(scte)
@@ -84,8 +84,6 @@ def decodesctestring(logger, scte:str):
           sctemessage['duration'] = float(cue.command.break_duration)
         if cue.command.avail_num is not None:
           sctemessage['availnum'] = int(cue.command.avail_num)
-
-
     elif cue.command.command_type == 6:
       sctemessage['type'] = 'timesignal'
     for descriptor in cue.descriptors:
@@ -248,7 +246,7 @@ def initializemonitor(monitorinfo:dict, technology:str, renditionalias:str=''):
         'mediasequence': 0,
         'foundlastsegment': False,
         'lastsegmentnotfoundcount': 0,
-        'currentadbreak': None,
+        'currentadbreak': {},
         'headers': {
           'manifestlastupdated': 0,
           'activeinput': None,
@@ -375,37 +373,41 @@ def updateadbreakdurationdelta(logger, monitorinfo, adbreakid, new):
 
 
 # Respond with true if SCTE signal is one of ad break opportunity signals provided in the config file
-def checkifsignalisadbreak(logger, monitorinfo:dict, scteinfo:str):
-  isadbreak = False
+def checkifadbreak(logger, monitorinfo:dict, adbreak:dict):
+  adbreak.update({
+    'isopportunity': False,
+    'type': 'regular'
+  })
   try:
     # Check if SCTE message contains multiple descriptors
-    if 'descriptors' in scteinfo['decodedscte'].keys():
-      if len(scteinfo['decodedscte']['descriptors']) > 1:
-        logger.warning(f"A001: SCTE message contains multiple ({len(scteinfo['decodedscte']['descriptors'])}) segmentation descriptors: {scteinfo['decodedscte']['descriptors']}")
-        monitorinfo['reporting']['validations']['failures'].add('A005')
+    if 'descriptors' in adbreak['sctemessage']['decoded'].keys():
+      if len(adbreak['sctemessage']['decoded']['descriptors']) > 1:
+        logger.warning(f"[A002] SCTE message contains multiple ({len(adbreak['sctemessage']['decoded']['descriptors'])}) segmentation descriptors: {adbreak['sctemessage']['decoded']['descriptors']}")
     for adbreaksignal in monitorinfo['config']['endpointconfig']['validations']['custom']['adbreaksctesignals']:
-      # Check for segmentation descriptors
-      if isinstance(adbreaksignal, int) or adbreaksignal.isdigit():
-        adbreaksignal = int(adbreaksignal)
-        if 'descriptors' in scteinfo['decodedscte'].keys():
-          for descriptor in scteinfo['decodedscte']['descriptors']:
-            if 'segmentationtype' in descriptor.keys():
-              if descriptor['segmentationtype'] == adbreaksignal:
-                if descriptor['segmentationtype'] == 56:
-                  scteinfo['adbreaktype'] = 'overlay'
-                isadbreak = True
-                break
-      else:
-        # Check if splice insert
-        if 'type' in scteinfo['decodedscte'].keys() and scteinfo['decodedscte']['type'] == 'spliceinsert':
-          if 'outofnetwork' in scteinfo['decodedscte'].keys() and scteinfo['decodedscte']['outofnetwork']:
-            isadbreak = True
-            if 'descriptors' in scteinfo['decodedscte'].keys():
-              for descriptor in scteinfo['decodedscte']['descriptors']:
-                if 'segmentationtype' in descriptor.keys():
+      if not adbreak['isopportunity']:
+        # Check for segmentation descriptors
+        if isinstance(adbreaksignal, int) or adbreaksignal.isdigit():
+          adbreaksignal = int(adbreaksignal)
+          if 'descriptors' in adbreak['sctemessage']['decoded'].keys():
+            for descriptor in adbreak['sctemessage']['decoded']['descriptors']:
+              if 'segmentationtype' in descriptor.keys():
+                if descriptor['segmentationtype'] == adbreaksignal:
+                  adbreak['isopportunity'] = True
                   if descriptor['segmentationtype'] == 56:
-                    scteinfo['adbreaktype'] = 'overlay'
-                    break
+                    adbreak['type'] = 'overlay'
+                  break
+        elif adbreaksignal == 'spliceinsert':
+          # Check if splice insert
+          if 'type' in adbreak['sctemessage']['decoded'].keys() and adbreak['sctemessage']['decoded']['type'] == 'spliceinsert':
+            if adbreak['sctemessage']['decoded'].get('outofnetwork'):
+              adbreak['isopportunity'] = True
+              if 'descriptors' in adbreak['sctemessage']['decoded'].keys():
+                for descriptor in adbreak['sctemessage']['decoded']['descriptors']:
+                  if 'segmentationtype' in descriptor.keys():
+                    if descriptor['segmentationtype'] == 56:
+                      adbreak['type'] = 'overlay'
+                      break
+    if not adbreak['isopportunity']:
+      logger.warning(f"[205] Found SCTE message that is not among provided ad break opportunity signals in the config file: {adbreak['sctemessage']}")
   except Exception as e:
     logger.error(f"Error while checking if SCTE35 signal is ad break opportunity. Exception: {str(e)} Traceback: {traceback.format_exc()}")
-  return isadbreak
