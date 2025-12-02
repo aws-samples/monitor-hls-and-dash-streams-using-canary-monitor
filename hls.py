@@ -111,7 +111,7 @@ def startadbreak(logger, segment, monitorinfo:dict, new, adbreak:dict):
     if new:
       # Send metrics for ad break start and advertised duration if present
       utils.addmetric(logger, monitorinfo, 'Start', 1, 'Count', [{'Name': 'AdBreakType', 'Value': adbreak['type']}])
-      if adbreak['advertisedduration'] is not None and adbreak['advertisedduration'] > 0:
+      if adbreak.get('advertisedduration') and adbreak['advertisedduration'] > 0:
         utils.addmetric(logger, monitorinfo, 'AdvertisedDuration', adbreak['advertisedduration'], 'Seconds', [{'Name': 'AdBreakType', 'Value': adbreak['type']}])
       elif monitorinfo['config']['endpointconfig']['validations']['custom']['checkadbreakscteduration']:
         if monitorinfo['config']['origin'] != 'emt':
@@ -146,7 +146,6 @@ def gothroughsegments(logger, renditionalias, renditionid, monitorinfo:dict, new
                 'observed': f"{datetime.now(timezone.utc)}" if new else None,
                 'advertisedduration': parsetag(logger, tag, value),
                 'segmentsduration': 0.0,
-                'durationdelta': None,
                 'type': 'regular'
               }
               startadbreak(logger, segment, monitorinfo, new, adbreak)
@@ -167,7 +166,6 @@ def gothroughsegments(logger, renditionalias, renditionid, monitorinfo:dict, new
                     },
                     'advertisedduration': float(duration) if duration else None,
                     'segmentsduration': 0.0,
-                    'durationdelta': None,
                     'daterangeid': parseddaterange.get('ID', '')
                   }
                   utils.checkifadbreak(logger, monitorinfo, adbreak)
@@ -186,12 +184,13 @@ def gothroughsegments(logger, renditionalias, renditionid, monitorinfo:dict, new
         if monitorinfo['config']['origin'] == 'emt':
           if monitorinfo['config']['endpointconfig']['manifests']['adsegmentprefix'] in segment['name']:
             if not monitorinfo['manifest']['primary']['currentadbreak']:
-              info = {
-                'adbreaktype': 'regular',
-                'daterange': False,
-                'durationfromtag': None
+              adbreak = {
+                'observed': f"{datetime.now(timezone.utc)}" if new else None,
+                'advertisedduration': None,
+                'segmentsduration': 0.0,
+                'adbreaktype': 'regular'
               }
-              startadbreak(logger, segment, monitorinfo, new, info)
+              startadbreak(logger, segment, monitorinfo, new, adbreak)
           else:
             if monitorinfo['manifest']['primary']['currentadbreak']:
               endadbreak(logger, segment, monitorinfo, new)
