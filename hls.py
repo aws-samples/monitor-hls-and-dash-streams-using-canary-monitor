@@ -188,7 +188,7 @@ def gothroughsegments(logger, renditionalias, renditionid, monitorinfo:dict, new
                 'observed': f"{datetime.now(timezone.utc)}" if new else None,
                 'advertisedduration': None,
                 'segmentsduration': 0.0,
-                'adbreaktype': 'regular'
+                'type': 'regular'
               }
               startadbreak(logger, segment, monitorinfo, new, adbreak)
           else:
