@@ -18,6 +18,7 @@
     {% set positions = getpositions('metric') %},{% include 'widgets/metrics/adBreakDurationDelta' %}
     {% set positions = getpositions('metric') %},{% include 'widgets/metrics/adAvailNum' %}
     {% if renderinfo['trackingrequests'] and renderinfo['origin'] == 'emt' %}
+      {% set positions = getpositions('metric') %},{% include 'widgets/metrics/adBreakFillRate' %}
       {% set positions = getpositions('metric') %},{% include 'widgets/metrics/trackingLatency' %}
       {% set positions = getpositions('metric') %},{% include 'widgets/metrics/tracking4xx' %}
       {% set positions = getpositions('metric') %},{% include 'widgets/metrics/tracking5xx' %}

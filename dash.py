@@ -132,20 +132,21 @@ def determineifadbreak(logger, xmlperiodid, monitorinfo, periodinfo, observetime
   }
   try:
     if monitorinfo['config']['origin'].lower() == 'emt':
-      if '_' in xmlperiodid:
-        periodinfo['isadbreak'] = True
-        adbreakinfo['type'] = 'regular'
-      else:
-        for sctemessage in periodinfo['spliceinfo']:
-          if 'descriptors' in sctemessage.keys():
-            for descriptor in sctemessage['descriptors']:
-              if 'segmentationtype' in descriptor.keys():
-                if descriptor['segmentationtype'] == 56:
-                  periodinfo['isadbreak'] = True
-                  adbreakinfo['type'] = 'overlay'
-                  if 'availnum' in sctemessage.keys():
-                    adbreakinfo['availnum'] = sctemessage['availnum']
-                  adbreakinfo['advertisedduration'] = descriptor['duration'] if 'duration' in descriptor.keys() else 0.0
+      pass
+      # if '_' in xmlperiodid:
+      #   periodinfo['isadbreak'] = True
+      #   adbreakinfo['type'] = 'regular'
+      # else:
+      #   for sctemessage in periodinfo['spliceinfo']:
+      #     if 'descriptors' in sctemessage.keys():
+      #       for descriptor in sctemessage['descriptors']:
+      #         if 'segmentationtype' in descriptor.keys():
+      #           if descriptor['segmentationtype'] == 56:
+      #             periodinfo['isadbreak'] = True
+      #             adbreakinfo['type'] = 'overlay'
+      #             if 'availnum' in sctemessage.keys():
+      #               adbreakinfo['availnum'] = sctemessage['availnum']
+      #             adbreakinfo['advertisedduration'] = descriptor['duration'] if 'duration' in descriptor.keys() else 0.0
     else:
       for adbreaksctesignal in monitorinfo['config']['endpointconfig']['validations']['custom']['adbreaksctesignals']:
         if isinstance(adbreaksctesignal, int) or adbreaksctesignal.isdigit():

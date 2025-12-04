@@ -114,8 +114,7 @@ def startadbreak(logger, segment, monitorinfo:dict, new, adbreak:dict):
       if adbreak.get('advertisedduration') and adbreak['advertisedduration'] > 0:
         utils.addmetric(logger, monitorinfo, 'AdvertisedDuration', adbreak['advertisedduration'], 'Seconds', [{'Name': 'AdBreakType', 'Value': adbreak['type']}])
       elif monitorinfo['config']['endpointconfig']['validations']['custom']['checkadbreakscteduration']:
-        if monitorinfo['config']['origin'] != 'emt':
-          logger.warning(f"[204] Ad break has no duration")
+        logger.warning(f"[204] Ad break has no duration")
   except Exception as e:
     logger.error(f"Error at ad break start. Exception: {str(e)} Traceback: {traceback.format_exc()}")
 
@@ -144,9 +143,9 @@ def gothroughsegments(logger, renditionalias, renditionid, monitorinfo:dict, new
             if tag == 'EXT-X-CUE-OUT':
               adbreak = {
                 'observed': f"{datetime.now(timezone.utc)}" if new else None,
+                'type': 'regular',
                 'advertisedduration': parsetag(logger, tag, value),
-                'segmentsduration': 0.0,
-                'type': 'regular'
+                'segmentsduration': 0.0
               }
               startadbreak(logger, segment, monitorinfo, new, adbreak)
             elif tag == 'EXT-X-CUE-IN':
@@ -180,20 +179,20 @@ def gothroughsegments(logger, renditionalias, renditionid, monitorinfo:dict, new
             logger.warning(f"Discontinuity")
             utils.addmetric(logger, monitorinfo, 'Discontinuity', 1, 'Count', [{'Name': 'Rendition', 'Value': renditionid}])
       # Check for ad break on EMT origin
-      if renditionalias == 'primary':
-        if monitorinfo['config']['origin'] == 'emt':
-          if monitorinfo['config']['endpointconfig']['manifests']['adsegmentprefix'] in segment['name']:
-            if not monitorinfo['manifest']['primary']['currentadbreak']:
-              adbreak = {
-                'observed': f"{datetime.now(timezone.utc)}" if new else None,
-                'advertisedduration': None,
-                'segmentsduration': 0.0,
-                'type': 'regular'
-              }
-              startadbreak(logger, segment, monitorinfo, new, adbreak)
-          else:
-            if monitorinfo['manifest']['primary']['currentadbreak']:
-              endadbreak(logger, segment, monitorinfo, new)
+      # if renditionalias == 'primary':
+      #   if monitorinfo['config']['origin'] == 'emt':
+      #     if monitorinfo['config']['endpointconfig']['manifests']['adsegmentprefix'] in segment['name']:
+      #       if not monitorinfo['manifest']['primary']['currentadbreak']:
+      #         adbreak = {
+      #           'observed': f"{datetime.now(timezone.utc)}" if new else None,
+      #           'advertisedduration': None,
+      #           'segmentsduration': 0.0,
+      #           'type': 'regular'
+      #         }
+      #         startadbreak(logger, segment, monitorinfo, new, adbreak)
+      #     else:
+      #       if monitorinfo['manifest']['primary']['currentadbreak']:
+      #         endadbreak(logger, segment, monitorinfo, new)
       if new:
         # Update new segments duration
         monitorinfo['manifest'][renditionalias]['new']['duration'] = monitorinfo['manifest'][renditionalias]['new']['duration'] + segment['dsec']

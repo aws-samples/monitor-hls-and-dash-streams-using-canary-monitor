@@ -1,10 +1,12 @@
 from datetime import datetime, timezone
 import gzip
+import json
 import pathlib
 import traceback
 import time
 import urllib3
 import logging
+import isodate
 import threefive
 import random
 import re
@@ -279,34 +281,91 @@ def wait(logger, starttime:float, duration:float):
     logger.warning(f"Negative wait time between manifest requests, will back off")
 
 
-# Tracking
+# Read tracking response and capture avail information
+def analysetracking(logger, monitorinfo:dict, response, playhead:int):
+  try:
+    if response:
+      responsejson = json.loads(decoderesponse(response, True))
+      if 'avails' in responsejson:
+        for avail in responsejson['avails']:
+          availid = avail.get('availId')
+          if availid not in monitorinfo['reporting']['adbreaks']:
+            availstarttime = isodate.parse_duration(avail.get('startTime')).total_seconds()
+            adbreak = {
+              'observed': None,
+              'type': 'regular',
+              'playheaddelta': round(availstarttime - playhead, 3),
+              'filledduration': avail.get('durationInSeconds')
+            }
+            # Get advertised duration
+            if avail.get('adMarkerDuration'):
+              admarkderduration = isodate.parse_duration(avail.get('adMarkerDuration')).total_seconds()
+              if admarkderduration > 0:
+                adbreak['advertisedduration'] = admarkderduration
+            # Check if this is new ad break
+            adbreakisnew = False
+            if abs(adbreak['playheaddelta']) + adbreak.get('filledduration', 0) + monitorinfo['config']['endpointconfig']['tracking']['frequency'] > 0:
+              adbreak['observed'] = f"{datetime.now(timezone.utc)}"
+              adbreakisnew = True
+            # Get fillrate
+            if adbreak.get('filledduration') and adbreak.get('advertisedduration'):
+              adbreak['fillrate'] = round(adbreak['filledduration']/adbreak['advertisedduration'], 3)
+            # Check if ad break is overlay
+            if avail.get('ads') and avail['ads']:
+              ad = avail['ads'][0]
+              if 'mediaFiles' in ad.keys() and 'mediaFilesList' in ad['mediaFiles'].keys():
+                for mediafile in ad['mediaFiles']['mediaFilesList']:
+                  if 'mediaType' in mediafile.keys() and mediafile['mediaType'] == 'null/null':
+                    adbreak['type'] = 'overlay'
+                    break
+            # Check ad break duration
+            if not adbreak.get('advertisedduration') and monitorinfo['config']['endpointconfig']['validations']['custom']['checkadbreakscteduration']:
+              logger.warning(f"[204] Ad break has no duration")
+            # Update reporting with ad break info
+            monitorinfo['reporting']['adbreaks'][availid] = adbreak
+            # Send metrics
+            if adbreakisnew:
+              addmetric(logger, monitorinfo, 'Start', 1, 'Count', [{'Name': 'AdBreakType', 'Value': adbreak['type']}])
+              if adbreak.get('advertisedduration'):
+                addmetric(logger, monitorinfo, 'AdvertisedDuration', adbreak['advertisedduration'], 'Seconds', [{'Name': 'AdBreakType', 'Value': adbreak['type']}])
+              if adbreak.get('fillrate'):
+                addmetric(logger, monitorinfo, 'FillRate', adbreak['fillrate'], 'None', [{'Name': 'AdBreakType', 'Value': adbreak['type']}])
+  except Exception as e:
+    logger.error(f"Encountered error when analysing tracking. Exception: {str(e)} Traceback: {traceback.format_exc()}")
+
+
+# Get tracking response
 def tracking(logger, monitorinfo:dict, endpointconfig:dict):
   try:
     while not monitorinfo['state']['stop'].is_set():
       starttime = time.perf_counter()
       if endpointconfig['tracking']['get']:
-        trackingurl = ''
-        playhead = 0
+        trackingurl = endpointconfig['trackingurl']
+        playhead = None
+        # Calculate playhead
+        if monitorinfo['config']['technology'] == 'dash':
+          if 'availabilitystarttime' in monitorinfo['manifest']['primary'].keys():
+            playhead = round((datetime.now(timezone.utc) - monitorinfo['manifest']['primary']['availabilitystarttime']).total_seconds())
+        elif monitorinfo['config']['technology'] == 'hls':
+          if 'primary' in monitorinfo['manifest'].keys() and 'contentdurationsincestart' in monitorinfo['manifest']['primary'].keys():
+            playhead = round(monitorinfo['manifest']['primary']['contentdurationsincestart'])
+        # Update tracking url
         if endpointconfig['tracking']['playhead']:
-          if monitorinfo['config']['technology'] == 'dash':
-            if 'availabilitystarttime' in monitorinfo['manifest']['primary'].keys():
-              playhead = round((datetime.now(timezone.utc) - monitorinfo['manifest']['primary']['availabilitystarttime']).total_seconds()) - endpointconfig['tracking']['playheaddelay']
-              trackingurl = f"{endpointconfig['trackingurl']}?aws.playheadPositionInSeconds={playhead}"
-            else:
-              logger.debug(f"Waiting for availabilityStartTime before requesting playhead-aware tracking")
-          elif monitorinfo['config']['technology'] == 'hls':
-            if 'primary' in monitorinfo['manifest'].keys() and 'contentdurationsincestart' in monitorinfo['manifest']['primary'].keys():
-              playhead = round(monitorinfo['manifest']['primary']['contentdurationsincestart'] - endpointconfig['tracking']['playheaddelay'])
-              trackingurl = f"{endpointconfig['trackingurl']}?aws.playheadPositionInSeconds={playhead}"
-            else:
-              logger.debug(f"Waiting for content duration before requesting playhead-aware tracking")
-        else:
-          trackingurl = endpointconfig['trackingurl']
+          if playhead:
+            trackingurl = f"{trackingurl}?aws.playheadPositionInSeconds={playhead - endpointconfig['tracking']['playheaddelay']}"
+          else:
+            trackingurl = None
+            logger.debug(f"Waiting for manifest content to calculate tracking playhead")
+        # Request tracking
         if trackingurl:
           logger.debug(f"Requesting tracking")
           response = request(logger, 'GET', trackingurl, 'tracking', '', monitorinfo)
+          # Analyse tracking
+          if playhead:
+            analysetracking(logger, monitorinfo, response, playhead)
+          # Save tracking
           if endpointconfig['tracking']['save']['local']:
-            saveresponse(logger, response, monitorinfo, 'tracking', f"_playhead_{playhead}" if endpointconfig['tracking']['playhead'] else "", False)
+            saveresponse(logger, response, monitorinfo, 'tracking', f"_playhead_{playhead - endpointconfig['tracking']['playheaddelay']}" if endpointconfig['tracking']['playhead'] else "", False)
       wait(logger, starttime, endpointconfig['tracking']['frequency'])
   except Exception as e:
     logger.error(f"Encountered error in tracking thread. Exception: {str(e)} Traceback: {traceback.format_exc()}")
@@ -408,6 +467,6 @@ def checkifadbreak(logger, monitorinfo:dict, adbreak:dict):
                       adbreak['type'] = 'overlay'
                       break
     if not adbreak['isopportunity']:
-      logger.warning(f"[205] Found SCTE message that is not among provided ad break opportunity signals in the config file: {adbreak['sctemessage']}")
+      logger.warning(f"[205] Found SCTE message that is not among provided ad break opportunity signals in config file: {adbreak['sctemessage']}")
   except Exception as e:
     logger.error(f"Error while checking if SCTE35 signal is ad break opportunity. Exception: {str(e)} Traceback: {traceback.format_exc()}")
