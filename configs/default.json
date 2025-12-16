@@ -18,6 +18,12 @@
     "playhead": false,
     "playheaddelay": 10
   },
+  "reports": {
+    "frequency": 60,
+    "save": {
+      "s3": true
+    }
+  },
   "validations": {
     "perform": true,
     "custom": {

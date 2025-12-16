@@ -18,8 +18,9 @@ import tempfile
 from datetime import datetime, timezone
 import random
 import platform
-import shutil
 from queue import Queue
+from urllib.parse import urlparse
+
 import utils
 import dash
 import hls
@@ -168,24 +169,22 @@ def checkforinputorconfigchanges():
   return changes
 
 
-# Update status report
+# Save report
 def savereport(logger, monitorinfo, final:bool):
   try:
-    reportfilepath = pathlib.Path('archive', monitorinfo['config']['type'], monitorinfo['config']['workload'], monitorinfo['config']['origin'], monitorinfo['config']['endpoint'], monitorinfo['config']['technology'], 'reports', f"{monitorinfo['state']['startdatetime'].strftime('%Y_%m_%d_%H_%M_%S_%f')}.json")
-    if final:
-      reportfilepathfinal = pathlib.Path('archive', monitorinfo['config']['type'], monitorinfo['config']['workload'], monitorinfo['config']['origin'], monitorinfo['config']['endpoint'], monitorinfo['config']['technology'], 'reports', f"{monitorinfo['state']['startdatetime'].strftime('%Y_%m_%d_%H_%M_%S_%f')}_to_{datetime.now(timezone.utc).strftime('%Y_%m_%d_%H_%M_%S_%f')}.json")
-      if reportfilepath.exists():
-        shutil.move(reportfilepath, reportfilepathfinal)
-      reportfilepath = reportfilepathfinal
-    reportfilepath.parent.mkdir(parents=True, exist_ok=True)
-    with reportfilepath.open('w') as file:
-      if monitorinfo['config']['technology'] == 'hls':
-        file.write(json.dumps({'adbreaks': monitorinfo['reporting']['adbreaks'], 'validationfailures': list(monitorinfo['reporting']['validations']['failures'])}, indent=2))
-      else:
-        file.write(json.dumps({'adbreaks': monitorinfo['reporting']['adbreaks'], 'periods': monitorinfo['reporting']['periods'], 'validationfailures': list(monitorinfo['reporting']['validations']['failures'])}, indent=2))
-      logger.debug(f"Saved report to {reportfilepath}")
+    monitorinfo['reporting']['filepath'].parent.mkdir(parents=True, exist_ok=True)
+    monitorinfo['reporting']['report'][f"{monitorinfo['state']['startdatetime']}"] = {
+      'adbreaks': monitorinfo['reporting']['adbreaks'],
+      'endtime': f"{datetime.now(timezone.utc)}" if final else None
+    }
+    with open(monitorinfo['reporting']['filepath'], 'w') as file:
+      json.dump(monitorinfo['reporting']['report'], file, indent=2)
+      logger.debug(f"Saved report to {monitorinfo['reporting']['filepath']}")
+    if monitorinfo['config']['endpointconfig']['reports']['save']['s3'] and args.bucket:
+      s3.put_object(Bucket=args.bucket, Key=str(monitorinfo['reporting']['filepath']), Body=json.dumps(monitorinfo['reporting']['report'], indent=2), ContentType='application/json')
+      logger.debug(f"Saved report to s3://{args.bucket}/{str(monitorinfo['reporting']['filepath'])}")
   except Exception as e:
-    logger.error(f"Error updating worker endpoint configuration. Exception: {str(e)} Traceback: {traceback.format_exc()}")
+    logger.error(f"Error saving report. Exception: {str(e)} Traceback: {traceback.format_exc()}")
 
 
 # Publish metrics to CW
@@ -245,8 +244,9 @@ def monitor(endpointidentifier:tuple, endpointconfig:dict, stopflag, changeflag,
       'queue': Queue(),
     },
     'reporting': {
+      'filepath': pathlib.Path('archive', endpointidentifier[0], endpointidentifier[2], endpointidentifier[4], endpointidentifier[3], endpointidentifier[1], 'report.json'),
+      'report': {},
       'lastsavetime': time.perf_counter() - random.uniform(0,15),
-      'saveinterval': 15,
       'adbreaks': {},
       'periods': {},
       'validations': {
@@ -269,6 +269,11 @@ def monitor(endpointidentifier:tuple, endpointconfig:dict, stopflag, changeflag,
   if endpointconfig['loglevel'] in utils.loglevels.keys():
     logger.setLevel(utils.loglevels[endpointconfig['loglevel']])
   logger.info(f"Started monitoring origin endpoint {endpointconfig['manifesturl']}")
+  # Initialize reporting
+  if monitorinfo['reporting']['filepath'].exists():
+    with open(monitorinfo['reporting']['filepath'], 'r') as file:
+      logger.debug(f"Loaded report from {monitorinfo['reporting']['filepath']}")
+      monitorinfo['reporting']['report'] = json.load(file)
   # Start tracking
   try:
     if 'trackingurl' in endpointconfig.keys():
@@ -331,7 +336,7 @@ def monitor(endpointidentifier:tuple, endpointconfig:dict, stopflag, changeflag,
           monitorinfo['metrics']['lastpublishtime'] = time.perf_counter()
       # Save report
       if endpointconfig['validations']['perform']:
-        if requesttime - monitorinfo['reporting']['lastsavetime'] > monitorinfo['reporting']['saveinterval']:
+        if requesttime - monitorinfo['reporting']['lastsavetime'] > monitorinfo['config']['endpointconfig']['reports']['frequency']:
           savereport(logger, monitorinfo, False)
           monitorinfo['reporting']['lastsavetime'] = requesttime
       # Wait
@@ -345,7 +350,6 @@ def monitor(endpointidentifier:tuple, endpointconfig:dict, stopflag, changeflag,
     monitorinfo['state']['stop'].set()
     for thread in monitorinfo['state']['threads'].keys():
       monitorinfo['state']['threads'][thread].join()
-    monitorinfo['state']['endtime'] = time.time()
     # Save report
     savereport(logger, monitorinfo, True)
     logger.info(f"Stopped monitoring")
@@ -452,10 +456,12 @@ def renderandsavedashboard(renderinfo:dict):
 
 # Create CW dashboards
 def createdashboards():
-  # Give HLS monitor time to collect information about renditions
-  time.sleep(15)
+  organizedendpoints = {}
   try:
-    organizedendpoints = {}
+    # Give HLS monitor time to collect information about renditions
+    if any(endpoint[1] == 'hls' for endpoint in mainconfig['endpoints']):
+      mainlogger.info(f"Waiting to collect rendition information about new HLS endpoints")
+      time.sleep(10)
     # Prepare organized dictionary of endpoints for render
     for endpoint, config in mainconfig['endpoints'].items():
       if config['cwmetrics']:
@@ -479,7 +485,7 @@ def createdashboards():
         if endpointinfo['technology'] == 'hls':
           endpointinfo['renditions'] = sharedwithmain.get(endpoint, {}).get('hlsrenditions', [])
           if not endpointinfo['renditions']:
-            mainlogger.warning(f"No HLS renditions found for endpoint {endpoint}")
+            mainlogger.warning(f"Failed to collect rendition information for HLS endpoint {endpoint}")
         # if config['segments']['get'] or config['segments']['head']:
         #   organizedendpoints[(endpoint[0], endpoint[2], endpoint[4])]['segmentrequests'] = True
         #   endpointinfo['segmentrequests'] = True
@@ -523,6 +529,7 @@ if __name__ == '__main__':
   parser.add_argument('-t', '--threads', action='store_true', help='use threads instead of processes')
   parser.add_argument('-na', '--no-aws', action='store_true', help='do not use AWS')
   parser.add_argument('-r', '--region', type=str, default='us-west-2', help='AWS region to use, default: us-west-2')
+  parser.add_argument('-b', '--bucket', type=str, help='AWS S3 bucket name for archive')
   args = parser.parse_args()
 
   # Configure logging
@@ -568,6 +575,18 @@ if __name__ == '__main__':
       # CloudWatch
       cloudwatch = boto3.client('cloudwatch', config=config)
       mainlogger.info(f"Configured CloudWatch client in {args.region}")
+      # S3
+      if args.bucket:
+        s3 = boto3.client('s3', config=config)
+        mainlogger.info(f"Configured S3 client in {args.region}")
+        try:
+          s3.head_bucket(Bucket=args.bucket)
+        except ClientError as e:
+          if e.response['Error']['Code'] == '404':
+            mainlogger.error(f"Error finding S3 bucket. Exception: {e}")
+          elif e.response['Error']['Code'] == '403':
+            mainlogger.error(f"Error accessing S3 bucket. Exception: {e}")
+          args.bucket = None
     except Exception as e:
       mainlogger.error(f"Error initializing AWS resources. Exception: {e} Trackeback: {traceback.format_exc()}")
       args.no_aws = True
