@@ -19,8 +19,6 @@ from datetime import datetime, timezone
 import random
 import platform
 from queue import Queue
-from urllib.parse import urlparse
-
 import utils
 import dash
 import hls
@@ -431,15 +429,11 @@ def renderandsavedashboard(renderinfo:dict):
       template = env.get_template(renderinfo['type'])
       render = template.render(renderinfo=renderinfo, dashboardconfig=dashboardconfig)
       # Save render to file
-      # dashboardfilepath = pathlib.Path('archive', renderinfo['type'], renderinfo['workload'], renderinfo['origin'], 'dashboards', f"{datetime.datetime.utcnow().strftime('%Y_%m_%d_%H_%M_%S_%f')}.json")
-      # try:
-      #   dashboardfilepath.parent.mkdir(parents=True, exist_ok=True)
-      #   with dashboardfilepath.open('w') as file:
-      #     file.write(render)
-      # except Exception as e:
-      #   mainlogger.error(f"Failed to archive dashboard. Exception: {e} Traceback: {traceback.format_exc()}")
+      with tempfile.NamedTemporaryFile(mode='w', delete=False) as f:
+        f.write(render)
+        mainlogger.info(f"Saved dashboard to {f.name}")
       renderjson = json.loads(render)
-      # Save dashboard to CloudWatch if it is a valid JSON
+      # Save dashboard to CloudWatch
       try:
         dashboardname = f"{renderinfo['workload'].upper()}-{renderinfo['origin'].upper() if renderinfo['origin'] in ['emp', 'emt'] else renderinfo['origin'].capitalize()}-Canary-Monitor"
         response = cloudwatch.put_dashboard(DashboardName=dashboardname, DashboardBody=render)
@@ -451,7 +445,7 @@ def renderandsavedashboard(renderinfo:dict):
         mainlogger.error(f"Faled to save dashboard to CloudWatch. Exception: {e} Traceback: {traceback.format_exc()}")
         raise
   except Exception as e:
-    mainlogger.error(f"Failed to render dashboard for {renderinfo['workload']} workload, {renderinfo['origin']} origin. Exception: {e} Traceback: {traceback.format_exc()}")
+    mainlogger.error(f"Error saving dashboard for {renderinfo['workload']} workload, {renderinfo['origin']} origin. Exception: {e} Traceback: {traceback.format_exc()}")
 
 
 # Create CW dashboards
@@ -494,9 +488,9 @@ def createdashboards():
           endpointinfo['trackingrequests'] = True
         # Append endpointinfo to list of endpoints
         organizedendpoints[(endpoint[0], endpoint[2], endpoint[4])]['endpoints'].append(endpointinfo.copy())
-    for item in organizedendpoints.keys():
+    for item, value in organizedendpoints.items():
       if item in mainconfig['changedworkloads']:
-        renderandsavedashboard(organizedendpoints[item])
+        renderandsavedashboard(value)
   except Exception as e:
     mainlogger.error(f"Failed to create dashboards. Exception: {e} Traceback: {traceback.format_exc()}")
 
@@ -530,6 +524,7 @@ if __name__ == '__main__':
   parser.add_argument('-na', '--no-aws', action='store_true', help='do not use AWS')
   parser.add_argument('-r', '--region', type=str, default='us-west-2', help='AWS region to use, default: us-west-2')
   parser.add_argument('-b', '--bucket', type=str, help='AWS S3 bucket name for archive')
+  parser.add_argument('-l', '--lambda-function', type=str, help='AWS Lambda arn for AWS CloudWatch dashboard reporting')
   args = parser.parse_args()
 
   # Configure logging
@@ -632,6 +627,10 @@ if __name__ == '__main__':
     },
     'loginsights': {
       'height': 8
+    },
+    'report': {
+      'height': 8,
+      'lambda': args.lambda_function if args.lambda_function else None
     },
     'region': args.region
   }

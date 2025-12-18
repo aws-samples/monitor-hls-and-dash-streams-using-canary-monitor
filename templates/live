@@ -1,5 +1,4 @@
 {% set positions = initpositions() %}
-
 {
   "widgets": [
     {% set positions = getpositions('header') %}{% include 'widgets/headers/metrics' %}
@@ -23,6 +22,10 @@
       {% set positions = getpositions('metric') %},{% include 'widgets/metrics/tracking4xx' %}
       {% set positions = getpositions('metric') %},{% include 'widgets/metrics/tracking5xx' %}
       {% set positions = getpositions('metric') %},{% include 'widgets/metrics/trackingFailure' %}
+    {% endif %}
+    {% if dashboardconfig['report']['lambda'] %}
+      {% set positions = getpositions('header') %},{% include 'widgets/headers/reports' %}
+      {% set positions = getpositions('report') %},{% include 'widgets/custom/report' %}
     {% endif %}
     {% set positions = getpositions('header') %},{% include 'widgets/headers/logs' %}
     {% set positions = getpositions('loginsights') %},{% include 'widgets/loginsights/monitor' %}

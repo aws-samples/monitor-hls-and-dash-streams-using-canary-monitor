@@ -14,8 +14,9 @@ def gothroughsegmenttemplatesofperiod(logger, monitorinfo:dict, xmlperiod, segme
   try:
     ns = {'default': 'urn:mpeg:dash:schema:mpd:2011'}
     for segmenttemplate in segmenttemplates:
-      pts = getsegmentinfo(logger, monitorinfo, segmenttemplate, xmlperiod, False, True)
-      ptsvalues.add(pts)
+      if segmenttemplate.get('mimetype') != 'image/jpeg':
+        pts = getsegmentinfo(logger, monitorinfo, segmenttemplate, xmlperiod, False, True)
+        ptsvalues.add(pts)
     # Compare PTS values
     if ptsvalues:
       maxptsdelta = round(max(ptsvalues) - min(ptsvalues), 3)
