@@ -15,7 +15,7 @@
       "type": "{{renderinfo['type']}}",
       "workload": "{{renderinfo['workload']}}",
       "origin": "{{renderinfo['origin']}}",
-      "endpoints": {% set ns = namespace(count = 0) %}[{% for endpoint in renderinfo['endpoints'] %}{% if ns.count > 0 %}, {% endif %}{"id": {{ns.count + 1}}, "endpoint": "{{endpoint['endpoint']}}", "technology": "{{endpoint['technology']}}"}{% set ns.count = ns.count + 1 %}{% endfor %}]
+      "endpoints": {% set ns = namespace(count = 0) %}[{% for endpoint in renderinfo['endpoints'] %}{% if ns.count > 0 %}, {% endif %}{"id": {{ns.count + 1}}, "endpoint": "{{endpoint['endpoint']}}", "technology": "{{endpoint['technology']}}", "report": {"location": {% if dashboardconfig['report']['bucket'] %}"s3://{{dashboardconfig['report']['bucket']}}/archive/{{renderinfo['type']}}/{{renderinfo['workload']}}/{{renderinfo['origin']}}/{{endpoint['endpoint']}}/{{endpoint['technology']}}/report.json"{% else %}""{% endif %}}}{% set ns.count = ns.count + 1 %}{% endfor %}]
     }
   }
 }

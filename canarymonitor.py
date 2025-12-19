@@ -445,7 +445,7 @@ def renderandsavedashboard(renderinfo:dict):
         mainlogger.error(f"Faled to save dashboard to CloudWatch. Exception: {e} Traceback: {traceback.format_exc()}")
         raise
   except Exception as e:
-    mainlogger.error(f"Error saving dashboard for {renderinfo['workload']} workload, {renderinfo['origin']} origin. Exception: {e} Traceback: {traceback.format_exc()}")
+    mainlogger.error(f"Error creating dashboard for {renderinfo['workload']} workload, {renderinfo['origin']} origin. Exception: {e} Traceback: {traceback.format_exc()}")
 
 
 # Create CW dashboards
@@ -630,6 +630,7 @@ if __name__ == '__main__':
     },
     'report': {
       'height': 8,
+      'bucket': args.bucket if args.bucket else None,
       'lambda': args.lambda_function if args.lambda_function else None
     },
     'region': args.region
