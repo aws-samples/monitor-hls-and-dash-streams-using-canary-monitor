@@ -5,7 +5,7 @@
   "width": {{dashboardconfig['maxwidth']}},
   "type": "text",
   "properties": {
-    "markdown": "## Reports",
+    "markdown": "## Analytics",
     "background": "solid"
   }
 }

@@ -171,9 +171,11 @@ def checkforinputorconfigchanges():
 def savereport(logger, monitorinfo, final:bool):
   try:
     monitorinfo['reporting']['filepath'].parent.mkdir(parents=True, exist_ok=True)
-    monitorinfo['reporting']['report'][f"{monitorinfo['state']['startdatetime']}"] = {
-      'adbreaks': monitorinfo['reporting']['adbreaks'],
-      'endtime': f"{datetime.now(timezone.utc)}" if final else None
+    monitorinfo['reporting']['report'][f"{monitorinfo['state']['starttimeepoch']}"] = {
+      'starttime': f"{monitorinfo['state']['startdatetime']}",
+      'endtime': f"{datetime.now(timezone.utc)}" if final else None,
+      'runtime': int(time.perf_counter() - monitorinfo['state']['starttimeperf']),
+      'adbreaks': monitorinfo['reporting']['adbreaks']
     }
     with open(monitorinfo['reporting']['filepath'], 'w') as file:
       json.dump(monitorinfo['reporting']['report'], file, indent=2)
@@ -231,6 +233,7 @@ def monitor(endpointidentifier:tuple, endpointconfig:dict, stopflag, changeflag,
     'state': {
       'starttimeperf': time.perf_counter(),
       'startdatetime': datetime.now(timezone.utc),
+      'starttimeepoch': int(time.time()),
       'threads': {},
       'lock': threading.Lock(),
       'stop': threading.Event(),
