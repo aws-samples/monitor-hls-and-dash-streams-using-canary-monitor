@@ -379,7 +379,7 @@ def checkforstaleness(logger, monitorinfo:dict, requesttime, renditionalias, ren
   try:
     bufferlength = len(monitorinfo['manifest'][renditionalias]['buffer']['window'])
     for timestamp, duration in monitorinfo['manifest'][renditionalias]['buffer']['window'].items():
-      if timestamp > requesttime - monitorinfo['manifest'][renditionalias]['buffer']['size'] or bufferlength == 1:
+      if timestamp > requesttime - monitorinfo['manifest'][renditionalias]['buffer']['size']:
         durationsum = durationsum + duration
       else:
         todelete.append(timestamp)

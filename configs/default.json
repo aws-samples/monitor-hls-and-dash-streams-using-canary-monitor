@@ -21,7 +21,7 @@
   "reports": {
     "frequency": 60,
     "save": {
-      "s3": true
+      "s3": false
     }
   },
   "validations": {

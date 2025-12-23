@@ -524,7 +524,7 @@ if __name__ == '__main__':
   parser.add_argument('-na', '--no-aws', action='store_true', help='do not use AWS')
   parser.add_argument('-r', '--region', type=str, default='us-west-2', help='AWS region to use, default: us-west-2')
   parser.add_argument('-b', '--bucket', type=str, help='AWS S3 bucket name for archive')
-  parser.add_argument('-l', '--lambda-function', type=str, help='AWS Lambda arn for AWS CloudWatch dashboard reporting')
+  parser.add_argument('-l', '--lambda-function', type=str, help='AWS Lambda arn for AWS CloudWatch dashboard reporting widget')
   args = parser.parse_args()
 
   # Configure logging
