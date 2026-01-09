@@ -18,6 +18,7 @@ Python 3.9 or newer with following libraries:
 - botocore
 - urllib3
 - isodate
+- python-json-logger
 
 You can use `pip install -r requirements.txt` to install all required libraries at once.
 
@@ -98,7 +99,7 @@ The tool sends metrics to CloudWatch for an endpoint if the endpoint is configur
 
 The canary monitor automatically creates or updates CloudWatch dashboards anytime a change is detected in the list of monitored endpoints. The tool groups the monitored endpoints by workload and origin name when creating the dasbhoards, meaning endpoints with the same workload and origin name are part of the same dashboard. Dashboards include only relevant metrics based on the values in the monitoring config file.
 
-When report JSON files are stored to an AWS S3 bucket, the dashboard includes a custom widget which calls an AWS Lambda function to analyse the reports. See the [Reporting](#Reporting) section for more info.
+The dashboard includes a custom widget which calls an AWS Lambda function to create a table with additional information about health of each endpoint. The lambda function See the [Reporting](#Reporting) section for more info.
 
 ### CloudWatch Metrics
 
@@ -217,21 +218,28 @@ The canary monitor supports the following arguments at start:
 
 ```
 $ ./canarymonitor.py -h
-usage: canarymonitor.py [-h] [-t] [-na] [-r REGION] [-b BUCKET] [-l LAMBDA_FUNCTION]
+usage: canarymonitor.py [-h] [-t] [-na] [-r REGION] [-b BUCKET] [-l LAMBDA_FUNCTION] [-jl]
 
-options:
+optional arguments:
   -h, --help            show this help message and exit
   -t, --threads         use threads instead of processes
-  -na, --no-aws         do not use AWS
+  -na, --no-aws         do not use any AWS resources
   -r REGION, --region REGION
                         AWS region to use, default: us-west-2
   -b BUCKET, --bucket BUCKET
                         AWS S3 bucket name for archive
   -l LAMBDA_FUNCTION, --lambda-function LAMBDA_FUNCTION
                         AWS Lambda arn for AWS CloudWatch dashboard reporting widget
+  -jl, --json-logger    log using JSON format if python-json-logger is available
 ```
 
-Users should use `ctrl+c` or `kill -2 PID` to stop the canary monitor where PID is the process number as logged on each line in the `logs/service.log` log file.
+Command line example:
+
+```
+./canarymonitor.py -jl -b canary-monitor-012345678910 -l arn:aws:lambda:us-west-2:012345678910:function:canary-monitor-analyzer
+```
+
+You should use `ctrl+c` or `kill -2 PID` to stop the canary monitor where PID is the process number as logged on each line in the `logs/service.log` log file.
 
 ### Running as a Service
 
@@ -249,7 +257,7 @@ After=network.target
 Type=simple
 User=ec2-user
 WorkingDirectory=/home/ec2-user/monitor-hls-and-dash-streams-using-canary-monitor/
-ExecStart=/usr/bin/python3 /home/ec2-user/monitor-hls-and-dash-streams-using-canary-monitor/canarymonitor.py -b canary-monitor-012345678910 -l arn:aws:lambda:us-west-2:012345678910:function:canary-monitor-report-analyser
+ExecStart=/usr/bin/python3 /home/ec2-user/monitor-hls-and-dash-streams-using-canary-monitor/canarymonitor.py -jl -b canary-monitor-012345678910 -l arn:aws:lambda:us-west-2:012345678910:function:canary-monitor-report-analyser
 Restart=no
 
 [Install]

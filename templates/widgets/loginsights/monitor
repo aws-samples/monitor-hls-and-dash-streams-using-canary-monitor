@@ -5,9 +5,9 @@
   "width": {{dashboardconfig['maxwidth']}},
   "type": "log",
   "properties": {
-    "query": {% if dashboardconfig['jsonlogformat'] %}"SOURCE 'CanaryMonitor/MonitorLogs' | filter type == \"{{renderinfo['type']}}\" and origin == \"{{renderinfo['origin']}}\" and workload == \"{{renderinfo['workload']}}\" and levelname like /DEBUG|INFO|WARNING|ERROR|CRITICAL/\n| display @timestamp, levelname, technology, endpoint, rendition, message\n| sort time desc\n| limit 5000"{% else %}"SOURCE 'CanaryMonitor/MonitorLogs' | parse @message '* * * * * * * * *' as time, sev, type, origin, workload, endpoint, tech, rend, logmessage\n| filter type == \"{{renderinfo['type']}}\" and origin == \"{{renderinfo['origin']}}\" and workload == \"{{renderinfo['workload']}}\"\n and sev like /W|E|C/ {% if renderinfo['origin'] == 'emt' %}and logmessage not like /Discontinuity/{% endif %} | display time, sev, tech, endpoint, rend, logmessage\n| sort time desc\n| limit 5000"{% endif %},
+    "query": {% if dashboardconfig['jsonlogformat'] %}"SOURCE 'CanaryMonitor/MonitorLogs' | filter type == \"{{renderinfo['type']}}\" and origin == \"{{renderinfo['origin']}}\" and workload == \"{{renderinfo['workload']}}\" and levelname like /WARNING|ERROR|CRITICAL/\n| display @timestamp, levelname, technology, endpoint, rendition, message\n| sort @timestamp desc\n| limit 5000"{% else %}"SOURCE 'CanaryMonitor/MonitorLogs' | parse @message '* * * * * * * * *' as time, sev, type, origin, workload, endpoint, tech, rend, logmessage\n| filter type == \"{{renderinfo['type']}}\" and origin == \"{{renderinfo['origin']}}\" and workload == \"{{renderinfo['workload']}}\"\n and sev like /W|E|C/ {% if renderinfo['origin'] == 'emt' %}and logmessage not like /Discontinuity/{% endif %} | display time, sev, tech, endpoint, rend, logmessage\n| sort time desc\n| limit 5000"{% endif %},
     "region": "us-west-2",
-    "title": "Monitoring logs (warnings)",
+    "title": "Monitoring logs (warning|error|critical log level)",
     "view": "table"
   }
 }

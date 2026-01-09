@@ -5,9 +5,9 @@
   "width": {{dashboardconfig['maxwidth']}},
   "type": "log",
   "properties": {
-    "query": "SOURCE 'CanaryMonitor/ServiceLogs' | parse @message '* * * *' as time, sev, processid, logmessage\n| filter sev like /I|D|W|E|C/ | display time, sev, logmessage\n| sort time desc\n| limit 5000",
+    "query": {% if dashboardconfig['jsonlogformat'] %}"SOURCE 'CanaryMonitor/ServiceLogs' | display @timestamp, levelname, message\n| sort @timestamp desc\n| limit 5000"{% else %}"SOURCE 'CanaryMonitor/ServiceLogs' | parse @message '* * * *' as time, sev, processid, logmessage\n| filter sev like /I|D|W|E|C/ | display time, sev, logmessage\n| sort time desc\n| limit 5000"{% endif %},
     "region": "us-west-2",
-    "title": "Service logs (all)",
+    "title": "Service logs",
     "view": "table"
   }
 }
