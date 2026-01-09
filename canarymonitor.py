@@ -23,6 +23,24 @@ import utils
 import dash
 import hls
 
+# Allow logging extra values
+class JsonLoggerAdapter(logging.LoggerAdapter):
+  def process(self, msg, kwargs):
+    if 'extra' in kwargs:
+      kwargs['extra'].update(self.extra)
+    else:
+      kwargs['extra'] = self.extra
+    return msg, kwargs
+
+# Determine which LoggerAdapter to use based on argument and library availability
+def getloggeradapterclass(use_json_logger):
+  if use_json_logger:
+    try:
+      import pythonjsonlogger
+      return JsonLoggerAdapter
+    except ImportError:
+      pass
+  return logging.LoggerAdapter
 
 # Initialize widget positions when rendering dashboard
 def initpositions():
@@ -266,7 +284,7 @@ def monitor(endpointidentifier:tuple, endpointconfig:dict, stopflag, changeflag,
   # Configure logging
   logging.config.dictConfig(loggingconfig)
   monitorlogger = logging.getLogger('monitor')
-  logger = logging.LoggerAdapter(monitorlogger, {'type': monitorinfo['config']['type'], 'origin': monitorinfo['config']['origin'], 'workload': monitorinfo['config']['workload'], 'endpoint': monitorinfo['config']['endpoint'], 'technology': monitorinfo['config']['technology'], 'rendition': 'multi'})
+  logger = getloggeradapterclass(args.json_logger)(monitorlogger, {'type': monitorinfo['config']['type'], 'origin': monitorinfo['config']['origin'], 'workload': monitorinfo['config']['workload'], 'endpoint': monitorinfo['config']['endpoint'], 'technology': monitorinfo['config']['technology'], 'rendition': 'multi'})
   if endpointconfig['loglevel'] in utils.loglevels.keys():
     logger.setLevel(utils.loglevels[endpointconfig['loglevel']])
   logger.info(f"Started monitoring origin endpoint {endpointconfig['manifesturl']}")
@@ -281,7 +299,7 @@ def monitor(endpointidentifier:tuple, endpointconfig:dict, stopflag, changeflag,
       monitorinfo['state']['threads']['tracking'] = threading.Thread(target=utils.tracking, args=(logger, monitorinfo, endpointconfig))
       monitorinfo['state']['threads']['tracking'].start()
   except Exception as e:
-    logger.error(f"Failed to start tracking. Exception: {str(e)} Traceback: {traceback.format_exc()}")
+    logger.error(f"Failed to start tracking. Exception: {str(e)} Traceback: {traceback.format_exc()}", extra={'event': 'INTERNAL_ERROR'})
   # Main loop
   try:
     while not stopflag.is_set():
@@ -345,7 +363,7 @@ def monitor(endpointidentifier:tuple, endpointconfig:dict, stopflag, changeflag,
   except KeyboardInterrupt:
     logger.info(f"Received signal to stop, waiting for all workers to stop")
   except Exception as e:
-    logger.error(f"Encountered error while monitoring. Exception: {str(e)} Traceback: {traceback.format_exc()}")
+    logger.error(f"Encountered error while monitoring. Exception: {str(e)} Traceback: {traceback.format_exc()}", extra={'event': 'INTERNAL_ERROR'})
   finally:
     # Stop all threads
     monitorinfo['state']['stop'].set()
@@ -528,16 +546,39 @@ if __name__ == '__main__':
   parser.add_argument('-r', '--region', type=str, default='us-west-2', help='AWS region to use, default: us-west-2')
   parser.add_argument('-b', '--bucket', type=str, help='AWS S3 bucket name for archive')
   parser.add_argument('-l', '--lambda-function', type=str, help='AWS Lambda arn for AWS CloudWatch dashboard reporting widget')
+  parser.add_argument('-jl', '--json-logger', action='store_true', help='use JSON logging if pythonjsonlogger is available')
   args = parser.parse_args()
 
   # Configure logging
   locallogsfolderpath = pathlib.Path('logs')
   locallogsfolderpath.mkdir(exist_ok=True)
+  
+  # Use JSON logger only if requested and library is available
   loggingconfigpath = pathlib.Path(os.path.dirname(os.path.realpath(__file__)), 'loggingconfig.json')
+  
   with loggingconfigpath.open() as loggingconfigfile:
     loggingconfig = json.load(loggingconfigfile)
+  
+  # Check if JSON logging is requested and available
+  use_json = args.json_logger
+  if use_json:
+    try:
+      import pythonjsonlogger
+    except ImportError:
+      use_json = False
+  
+  # Modify formatters based on availability
+  if not use_json:
+    loggingconfig['handlers']['filemonitor']['formatter'] = 'monitor'
+    loggingconfig['handlers']['fileservice']['formatter'] = 'service'
+  
   logging.config.dictConfig(loggingconfig)
   mainlogger = logging.getLogger('service')
+  
+  if args.json_logger and not use_json:
+    mainlogger.warning(f"Missing 'python-json-logger' package, will use default logging")
+
+  # Start
   mainlogger.info(f"Started")
 
   # Enable threading if platform is Windows
@@ -636,6 +677,7 @@ if __name__ == '__main__':
       'bucket': args.bucket if args.bucket else None,
       'lambda': args.lambda_function if args.lambda_function else None
     },
+    'jsonlogformat': args.json_logger,
     'region': args.region
   }
 
@@ -663,6 +705,7 @@ if __name__ == '__main__':
   # Start monitor workers
   for key, value in mainconfig['endpoints'].items():
     startmonitorworker(key, value)
+  mainlogger.info(f"Now monitoring {len(mainconfig['workers'])} endpoints")
 
   # Main loop
   try:

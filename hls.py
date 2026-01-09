@@ -1,5 +1,6 @@
 import logging
 import logging.config
+from canarymonitor import getloggeradapterclass
 import traceback
 import utils
 from urllib.parse import urljoin
@@ -28,7 +29,7 @@ def parsetag(logger, tag:str, value:str):
     else:
       return value
   except Exception as e:
-    logger.error(f"Error parsing tag '{tag}' with value '{value}'. Exception: {str(e)} Traceback: {traceback.format_exc()}")
+    logger.error(f"Error parsing tag '{tag}' with value '{value}'. Exception: {str(e)} Traceback: {traceback.format_exc()}", extra={'event': 'MANIFEST_PARSE_ERROR'})
 
 
 def getmetadatatags(logger, renditionalias, responselines, monitorinfo:dict):
@@ -42,7 +43,7 @@ def getmetadatatags(logger, renditionalias, responselines, monitorinfo:dict):
       else:
         break
   except Exception as e:
-    logger.error(f"Error getting metadata tags. Exception: {str(e)} Traceback: {traceback.format_exc()}")
+    logger.error(f"Error getting metadata tags. Exception: {str(e)} Traceback: {traceback.format_exc()}", extra={'event': 'MANIFEST_PARSE_ERROR'})
     raise
 
 
@@ -87,7 +88,7 @@ def getsegmentinfo(logger, renditionalias, responselines, monitorinfo:dict, alls
             if not allsegments:
               logger.debug(f"Found new segment: {utils.printdictionary(logger, segment)}")
           else:
-            logger.warning(f"Segment {segment} has no duration")
+            logger.warning(f"Segment has no duration, segment: {segment}", extra={'event': 'NON_COMPLIANT_MANIFEST'})
         elif not allsegments:
           if mediasequence == monitorinfo['manifest'][renditionalias]['last']['segment']['msn']:
             monitorinfo['manifest'][renditionalias]['foundlastsegment'] = True
@@ -96,14 +97,14 @@ def getsegmentinfo(logger, renditionalias, responselines, monitorinfo:dict, alls
         mediasequence += 1
         segmentinfo = resetsegmentinfo()
   except Exception as e:
-    logger.error(f"Error getting segment info. Exception: {str(e)} Traceback: {traceback.format_exc()}")
+    logger.error(f"Error getting segment info. Exception: {str(e)} Traceback: {traceback.format_exc()}", extra={'event': 'INTERNAL_ERROR'})
 
 
 def startadbreak(logger, segment, monitorinfo:dict, new, adbreak:dict):
   try:
     # Check for nested ad break
     if monitorinfo['manifest']['primary']['currentadbreak']:
-      logger.warning(f"[108] New ad break started without proper ending of previous ad break")
+      logger.warning(f"New ad break started without proper ending of previous ad break", extra={'event': 'BACK_TO_BACK_AD_BREAK'})
     # Update current ad break
     monitorinfo['manifest']['primary']['currentadbreak'] = {'id': segment['msn'], 'daterangeid': adbreak.get('daterangeid', '')}
     # Update reporting
@@ -114,9 +115,9 @@ def startadbreak(logger, segment, monitorinfo:dict, new, adbreak:dict):
       if adbreak.get('advertisedduration') and adbreak['advertisedduration'] > 0:
         utils.addmetric(logger, monitorinfo, 'AdvertisedDuration', adbreak['advertisedduration'], 'Seconds', [{'Name': 'AdBreakType', 'Value': adbreak['type']}])
       elif monitorinfo['config']['endpointconfig']['validations']['custom']['checkadbreakscteduration']:
-        logger.warning(f"[204] Ad break has no duration")
+        logger.warning(f"Ad break has no duration", extra={'event': 'AD_BREAK_DURATION_NOT_FOUND'})
   except Exception as e:
-    logger.error(f"Error at ad break start. Exception: {str(e)} Traceback: {traceback.format_exc()}")
+    logger.error(f"Error at ad break start. Exception: {str(e)} Traceback: {traceback.format_exc()}", extra={'event': 'INTERNAL_ERROR'})
 
 
 def endadbreak(logger, segment, monitorinfo:dict, new):
@@ -129,7 +130,7 @@ def endadbreak(logger, segment, monitorinfo:dict, new):
     # Clear current ad break
     monitorinfo['manifest']['primary']['currentadbreak'] = {}
   except Exception as e:
-    logger.error(f"Error at ad break end. Exception: {str(e)} Traceback: {traceback.format_exc()}")
+    logger.error(f"Error at ad break end. Exception: {str(e)} Traceback: {traceback.format_exc()}", extra={'event': 'INTERNAL_ERROR'})
 
 
 def gothroughsegments(logger, renditionalias, renditionid, monitorinfo:dict, new:bool=False):
@@ -176,7 +177,7 @@ def gothroughsegments(logger, renditionalias, renditionid, monitorinfo:dict, new
         # Check for discontinuity
         if tag == 'EXT-X-DISCONTINUITY':
           if new:
-            logger.warning(f"Discontinuity")
+            logger.warning(f"Discontinuity", extra={'event': 'DISCONTINUITY'})
             utils.addmetric(logger, monitorinfo, 'Discontinuity', 1, 'Count', [{'Name': 'Rendition', 'Value': renditionid}])
       # Check for ad break on EMT origin
       # if renditionalias == 'primary':
@@ -209,7 +210,7 @@ def gothroughsegments(logger, renditionalias, renditionid, monitorinfo:dict, new
       # Check if found last segment
       monitorinfo['manifest'][renditionalias]['lastsegmentnotfoundcount'] = 0 if monitorinfo['manifest'][renditionalias]['foundlastsegment'] else monitorinfo['manifest'][renditionalias]['lastsegmentnotfoundcount'] + 1
       if 0 < monitorinfo['manifest'][renditionalias]['lastsegmentnotfoundcount'] < 3:
-        logger.warning(f"Last segment not found")
+        logger.warning(f"Last segment not found", extra={'event': 'LAST_SEGMENT_NOT_FOUND'})
       elif monitorinfo['manifest'][renditionalias]['lastsegmentnotfoundcount'] == 3:
         monitorinfo['state']['restart'] = (True, 'Last segment not found in 3 consecutive manifest requests')
       if renditionalias == 'primary':
@@ -218,13 +219,13 @@ def gothroughsegments(logger, renditionalias, renditionid, monitorinfo:dict, new
           pdtdelta = round((monitorinfo['manifest'][renditionalias]['last']['segment']['pdt'] - datetime.now(timezone.utc)).total_seconds())
           utils.addmetric(logger, monitorinfo, 'PdtDelta', pdtdelta, 'Seconds', [])
   except Exception as e:
-    logger.error(f"Error going through segments. Exception: {str(e)} Traceback: {traceback.format_exc()}")
+    logger.error(f"Error going through segments. Exception: {str(e)} Traceback: {traceback.format_exc()}", extra={'event': 'INTERNAL_ERROR'})
 
 
 def monitor(renditionid, url:str, rendition:dict, monitorinfo:dict, primary:bool):
   logging.config.dictConfig(monitorinfo['config']['logging'])
   monitorlogger = logging.getLogger('monitor')
-  logger = logging.LoggerAdapter(monitorlogger, {'type': monitorinfo['config']['type'], 'origin': monitorinfo['config']['origin'], 'workload': monitorinfo['config']['workload'], 'endpoint': monitorinfo['config']['endpoint'], 'technology': monitorinfo['config']['technology'], 'rendition': renditionid})
+  logger = getloggeradapterclass(monitorinfo['args'].json_logger)(monitorlogger, {'type': monitorinfo['config']['type'], 'origin': monitorinfo['config']['origin'], 'workload': monitorinfo['config']['workload'], 'endpoint': monitorinfo['config']['endpoint'], 'technology': monitorinfo['config']['technology'], 'rendition': renditionid})
   if monitorinfo['config']['endpointconfig']['loglevel'] in utils.loglevels.keys():
     logger.setLevel(utils.loglevels[monitorinfo['config']['endpointconfig']['loglevel']])
   logger.info(f"Started monitoring origin endpoint {url}")
@@ -266,7 +267,7 @@ def monitor(renditionid, url:str, rendition:dict, monitorinfo:dict, primary:bool
       # Wait
       utils.wait(logger, requesttime, monitorinfo['config']['endpointconfig']['manifests']['frequency'])
   except Exception as e:
-    logger.error(f"Encountered error while monitoring. Exception: {str(e)} Traceback: {traceback.format_exc()}")
+    logger.error(f"Encountered error while monitoring. Exception: {str(e)} Traceback: {traceback.format_exc()}", extra={'event': 'INTERNAL_ERROR'})
   finally:
     logger.info(f"Stopped monitoring")
 
@@ -328,7 +329,7 @@ def startthreads(logger, monitorinfo:dict, response):
     # Update shared object with main process to inform about renditions
     monitorinfo['config']['sharedwithmain'][(monitorinfo['config']['type'], monitorinfo['config']['technology'], monitorinfo['config']['workload'], monitorinfo['config']['endpoint'], monitorinfo['config']['origin'])] = {'hlsrenditions': activerenditions}
   except Exception as e:
-    logger.error(f"Error starting threads. Exception: {str(e)} Traceback: {traceback.format_exc()}")
+    logger.error(f"Error starting threads. Exception: {str(e)} Traceback: {traceback.format_exc()}", extra={'event': 'INTERNAL_ERROR'})
 
 
 # Stop and start new HLS monitoring treads
@@ -347,5 +348,5 @@ def restartthreads(logger, monitorinfo:dict, response):
     # Clear state
     monitorinfo['state']['restart'] = (False, '')
   except Exception as e:
-    logger.error(f"Error restarting threads. Exception: {str(e)} Traceback: {traceback.format_exc()}")
+    logger.error(f"Error restarting threads. Exception: {str(e)} Traceback: {traceback.format_exc()}", extra={'event': 'INTERNAL_ERROR'})
 

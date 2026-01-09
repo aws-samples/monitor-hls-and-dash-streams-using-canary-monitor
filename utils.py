@@ -62,7 +62,7 @@ def printdictionary(logger, toprint:dict):
     else:
       return toprint
   except Exception as e:
-    logger.error(f"Error during priting of dictionary. Exception: {str(e)} Traceback: {traceback.format_exc()}")
+    logger.error(f"Error during printing of dictionary. Exception: {str(e)} Traceback: {traceback.format_exc()}", extra={'event': 'INTERNAL_ERROR'})
 
 
 # Decode base64 or hex SCTE string and return a decoded message
@@ -98,7 +98,7 @@ def decodesctestring(logger, scte:str):
           segmentationdescriptor['duration'] = descriptor.segmentation_duration
         sctemessage.setdefault('descriptors', []).append(segmentationdescriptor)
   except Exception as e:
-    logger.error(f"Error decoding SCTE message '{scte}'. Exception: {str(e)} Traceback: {traceback.format_exc()}")
+    logger.error(f"Error decoding SCTE message '{scte}'. Exception: {str(e)} Traceback: {traceback.format_exc()}", extra={'event': 'INTERNAL_ERROR'})
   return sctemessage
 
 
@@ -126,7 +126,7 @@ def request(logger, method:str, url:str, requesttype:str, rendition:str, monitor
     addmetric(logger, monitorinfo, 'Request', 1, 'Count', dimensions + [{'Name': 'Status', 'Value': 'failure'}])
     return None
   else:
-    logger.debug(f"HTTP response {response.status} ({response.reason}), url: {url}, response headers: {dict(response.headers.items())}")
+    logger.debug(f"HTTP response {response.status} ({response.reason}), url: {url}, response headers: {dict(response.headers.items())}", extra={'statusCode': response.status})
     return response
   finally:
     addmetric(logger, monitorinfo, 'Latency', int((time.perf_counter() - starttime) * 1000), 'Milliseconds', dimensions)
@@ -202,7 +202,7 @@ def saveresponse(logger, response, monitorinfo:dict, filetypegroup:str, filename
               f.write(response.data)
           logger.debug(f"Saved response to {filepath}")
   except Exception as e:
-    logger.error(f"Error saving response. Exception: {str(e)} Traceback: {traceback.format_exc()}")
+    logger.error(f"Error saving response. Exception: {str(e)} Traceback: {traceback.format_exc()}", extra={'event': 'INTERNAL_ERROR'})
 
 
 def initializemonitor(monitorinfo:dict, technology:str, renditionalias:str=''):
@@ -320,7 +320,7 @@ def analysetracking(logger, monitorinfo:dict, response, playhead:int):
                     break
             # Check ad break duration
             if not adbreak.get('advertisedduration') and monitorinfo['config']['endpointconfig']['validations']['custom']['checkadbreakscteduration']:
-              logger.warning(f"[204] Ad break has no duration")
+              logger.warning(f"Ad break has no duration", extra={'event': 'AD_BREAK_DURATION_NOT_FOUND'})
             # Update reporting with ad break info
             monitorinfo['reporting']['adbreaks'][availid] = adbreak
             # Send metrics
@@ -331,7 +331,7 @@ def analysetracking(logger, monitorinfo:dict, response, playhead:int):
               if adbreak.get('fillrate'):
                 addmetric(logger, monitorinfo, 'FillRate', adbreak['fillrate'], 'None', [{'Name': 'AdBreakType', 'Value': adbreak['type']}])
   except Exception as e:
-    logger.error(f"Encountered error when analysing tracking. Exception: {str(e)} Traceback: {traceback.format_exc()}")
+    logger.error(f"Encountered error when analysing tracking. Exception: {str(e)} Traceback: {traceback.format_exc()}", extra={'event': 'INTERNAL_ERROR'})
 
 
 # Get tracking response
@@ -368,7 +368,7 @@ def tracking(logger, monitorinfo:dict, endpointconfig:dict):
             saveresponse(logger, response, monitorinfo, 'tracking', f"_playhead_{playhead - endpointconfig['tracking']['playheaddelay']}" if endpointconfig['tracking']['playhead'] else "", False)
       wait(logger, starttime, endpointconfig['tracking']['frequency'])
   except Exception as e:
-    logger.error(f"Encountered error in tracking thread. Exception: {str(e)} Traceback: {traceback.format_exc()}")
+    logger.error(f"Encountered error in tracking thread. Exception: {str(e)} Traceback: {traceback.format_exc()}", extra={'event': 'INTERNAL_ERROR'})
   finally:
     logger.info(f"Stopped tracking thread")
 
@@ -387,9 +387,9 @@ def checkforstaleness(logger, monitorinfo:dict, requesttime, renditionalias, ren
       del monitorinfo['manifest'][renditionalias]['buffer']['window'][timestamp]
     addmetric(logger, monitorinfo, 'BufferFillDuration', durationsum, 'Seconds', [{'Name': 'Rendition', 'Value': renditionid}])
     if durationsum == 0:
-      logger.warning(f"Stale manifest")
+      logger.warning(f"Stale manifest", extra={'event': 'STALE_MANIFEST'})
   except Exception as e:
-    logger.error(f"Error while checking for staleness. Exception: {str(e)} Traceback: {traceback.format_exc()}")
+    logger.error(f"Error while checking for staleness. Exception: {str(e)} Traceback: {traceback.format_exc()}", extra={'event': 'INTERNAL_ERROR'})
 
 
 # Get manifest last updated header
@@ -406,14 +406,14 @@ def checkresponseheaders(logger, monitorinfo, response, renditionalias='primary'
     activeinput = int(response.headers['X-Amzn-Mediapackage-Active-Input'])
     if monitorinfo['manifest'][renditionalias]['headers']['activeinput'] is not None:
       if monitorinfo['manifest'][renditionalias]['headers']['activeinput'] != activeinput:
-        logger.warning(f"MediaPackage active input changed from {monitorinfo['manifest'][renditionalias]['headers']['activeinput']} to {activeinput}")
+        logger.warning(f"MediaPackage active input changed from {monitorinfo['manifest'][renditionalias]['headers']['activeinput']} to {activeinput}", extra={'event': 'ORIGIN_ACTIVE_INPUT_CHANGED'})
     monitorinfo['manifest'][renditionalias]['headers']['activeinput'] = activeinput
   if 'CMSD-Static' in response.headers:
     match = re.search('n="(.*?)"', response.headers['CMSD-Static'])
     if match:
       if monitorinfo['manifest'][renditionalias]['headers']['cmsd']['n'] is not None:
         if monitorinfo['manifest'][renditionalias]['headers']['cmsd']['n'] != match.group(1):
-          logger.warning(f"MediaPackage endpoint changed from {monitorinfo['manifest'][renditionalias]['headers']['cmsd']['n']} to {match.group(1)}")
+          logger.warning(f"MediaPackage endpoint changed from {monitorinfo['manifest'][renditionalias]['headers']['cmsd']['n']} to {match.group(1)}", extra={'event': 'ORIGIN_ENDPOINT_CHANGED'})
       monitorinfo['manifest'][renditionalias]['headers']['cmsd']['n'] = match.group(1)
 
 
@@ -426,9 +426,9 @@ def updateadbreakdurationdelta(logger, monitorinfo, adbreakid, new):
       if new:
         addmetric(logger, monitorinfo, 'DurationDelta', abs(monitorinfo['reporting']['adbreaks'][adbreakid]['durationdelta']), 'Seconds', [{'Name': 'AdBreakType', 'Value': monitorinfo['reporting']['adbreaks'][adbreakid]['type']}])
         if abs(monitorinfo['reporting']['adbreaks'][adbreakid]['durationdelta']) > monitorinfo['config']['endpointconfig']['validations']['custom']['maxadbreakdurationdelta']:
-          logger.warning(f"Ad break duration was {'longer' if monitorinfo['reporting']['adbreaks'][adbreakid]['durationdelta'] > 0 else 'shorter'} than advertised by {abs(monitorinfo['reporting']['adbreaks'][adbreakid]['durationdelta'])} seconds")
+          logger.warning(f"Ad break duration was {'longer' if monitorinfo['reporting']['adbreaks'][adbreakid]['durationdelta'] > 0 else 'shorter'} than advertised by {abs(monitorinfo['reporting']['adbreaks'][adbreakid]['durationdelta'])} seconds", extra={'event': 'AD_BREAK_DURATION_DELTA_BREACHED'})
   except Exception as e:
-    logger.error(f"Error while getting ad break duration delta. Exception: {str(e)} Traceback: {traceback.format_exc()}")
+    logger.error(f"Error while getting ad break duration delta. Exception: {str(e)} Traceback: {traceback.format_exc()}", extra={'event': 'INTERNAL_ERROR'})
 
 
 # Respond with true if SCTE signal is one of ad break opportunity signals provided in the config file
@@ -441,7 +441,7 @@ def checkifadbreak(logger, monitorinfo:dict, adbreak:dict):
     # Check if SCTE message contains multiple descriptors
     if 'descriptors' in adbreak['sctemessage']['decoded'].keys():
       if len(adbreak['sctemessage']['decoded']['descriptors']) > 1:
-        logger.warning(f"[A002] SCTE message contains multiple ({len(adbreak['sctemessage']['decoded']['descriptors'])}) segmentation descriptors: {adbreak['sctemessage']['decoded']['descriptors']}")
+        logger.warning(f"SCTE message contains multiple ({len(adbreak['sctemessage']['decoded']['descriptors'])}) segmentation descriptors: {adbreak['sctemessage']['decoded']['descriptors']}", extra={'event': 'MULTIPLE_SEGMENTATION_DESCRIPTORS'})
     for adbreaksignal in monitorinfo['config']['endpointconfig']['validations']['custom']['adbreaksctesignals']:
       if not adbreak['isopportunity']:
         # Check for segmentation descriptors
@@ -467,6 +467,6 @@ def checkifadbreak(logger, monitorinfo:dict, adbreak:dict):
                       adbreak['type'] = 'overlay'
                       break
     if not adbreak['isopportunity']:
-      logger.warning(f"[205] Found SCTE message that is not among provided ad break opportunity signals in config file: {adbreak['sctemessage']}")
+      logger.warning(f"Found SCTE message that is not among provided ad break opportunity signals in config file: {adbreak['sctemessage']}", extra={'event': 'UNEXPECTED_AD_BREAK_SCTE_SIGNAL'})
   except Exception as e:
-    logger.error(f"Error while checking if SCTE35 signal is ad break opportunity. Exception: {str(e)} Traceback: {traceback.format_exc()}")
+    logger.error(f"Error while checking if SCTE35 signal is ad break opportunity. Exception: {str(e)} Traceback: {traceback.format_exc()}", extra={'event': 'INTERNAL_ERROR'})

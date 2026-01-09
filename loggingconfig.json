@@ -9,6 +9,14 @@
     "monitor": {
       "format": "%(asctime)s.%(msecs)03d %(levelname).1s %(type)s %(origin)s %(workload)s %(endpoint)s %(technology)s %(rendition)s %(message)s",
       "datefmt": "%Y-%m-%dT%H:%M:%S"
+    },
+    "service_json": {
+      "()": "pythonjsonlogger.jsonlogger.JsonFormatter",
+      "format": "%(asctime)s %(levelname)s %(process)d %(message)s"
+    },
+    "monitor_json": {
+      "()": "pythonjsonlogger.jsonlogger.JsonFormatter",
+      "format": "%(asctime)s %(levelname)s %(type)s %(origin)s %(workload)s %(endpoint)s %(technology)s %(rendition)s %(message)s"
     }
   },
   "handlers": {
@@ -27,14 +35,14 @@
     "filemonitor": {
       "level": "DEBUG",
       "class": "logging.FileHandler",
-      "formatter": "monitor",
+      "formatter": "monitor_json",
       "filename": "logs/monitor.log",
       "mode": "a"
     },
     "fileservice": {
       "level": "DEBUG",
       "class": "logging.FileHandler",
-      "formatter": "service",
+      "formatter": "service_json",
       "filename": "logs/service.log",
       "mode": "a"
     }

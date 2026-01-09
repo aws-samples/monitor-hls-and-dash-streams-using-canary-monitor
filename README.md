@@ -125,14 +125,18 @@ Example CloudWatch dashboard dynamically created by the canary monitor tool:
 <img width="2543" height="635" alt="image" src="https://github.com/user-attachments/assets/d3e9846a-2cb3-414b-b1c3-19b73c6bd8bc" />
 
 
-## Validations
+## Logging and Validations
 
-The canary monitor performs several validations and logs warnings when validations fail. Some validations are performed by default, some can be controlled by adjusting values in the config file.
+The canary monitor logs any manifest compliance, parsing and validation issues that it encounters after each manifest request. Some validations can be controlled by changing configuration in the monitoring config file.
 
-The key validations include:
+You can enable JSON format logging by providing `-jl` argument at start. You can control logging by changing settings in `loggingconfig.json` file. By default, no logs get passed to the console and all logs are stored in the `logs` folder in `service.log` and `monitor.log` files. You can control logging level on per endpoint basis by changing the `loglevel` setting in the monitoring config file. Available logging levels are `debug`, `info`, `warning`, `error`, `critical`.
 
-| Impact      | Code Name                         | Description                                                                                                                                                                                                                                                                            |
+Key log events include the following warnings and errors (the code name is included in the logs only when logging in JSON format):
+
+| Impact      | Event Code Name                   | Description                                                                                                                                                                                                                                                                            |
 |-------------|-----------------------------------|----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| Playback    | MANIFEST_PARSE_ERROR              | Occurs when the canary monitor encounters an issue parsing the manifest                                                                                                                                                                                                                |
+| Playback    | NON_COMPLIANT_MANIFEST            | Occurs when the canary monitor encounters a non-comppliance in an HLS or DASH manifest                                                                                                                                                                                                 |
 | Playback    | STALE_MANIFEST                    | Occurs when manifest contains no new segments in last 20 seconds                                                                                                                                                                                                                       |
 | Playback    | LAST_SEGMENT_NOT_FOUND            | Occurs when last known segment is not found in the most recent manifest, e.g. the manifest goes backwards. This can happen for example when manifests are cached for longer than is the request time between manifests.                                                                |
 | Playback    | DISCONTINUITY                     | Occurs when EXT-X-DISCONTINUITY is found in an HLS manifest. Occurs when "t" value of segment n + 1 does not equal "t" + "d" value of segment n and segments are in the same DASH manifest period.                                                                                     |
