@@ -315,8 +315,11 @@ def gothroughsegments(logger, monitorinfo:dict, new:bool=False):
           monitorinfo['manifest']['primary']['new']['duration'] = monitorinfo['manifest']['primary']['new']['duration'] + segment['dsec']
           # Check for discontinuity
           if segment['t'] != monitorinfo['manifest']['primary']['last']['segment']['nextt']:
-            logger.warning(f"Discontinuity")
-            utils.addmetric(logger, monitorinfo, 'Discontinuity', 1, 'Count', [{'Name': 'Rendition', 'Value': "multi"}])
+            if monitorinfo['config']['origin'] == 'emt':
+              pass
+            else:
+              logger.warning(f"Discontinuity")
+              utils.addmetric(logger, monitorinfo, 'Discontinuity', 1, 'Count', [{'Name': 'Rendition', 'Value': "multi"}])
           # Check for segment availability delta
           if segment['ast+pts'] is not None:
             availabilitydelta = round((segment['ast+pts'] - monitorinfo['manifest']['primary']['manifestrequesttime']).total_seconds(), 3)

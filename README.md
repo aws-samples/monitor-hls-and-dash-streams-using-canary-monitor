@@ -208,10 +208,6 @@ The tool can store report files automatically in an AWS S3 bucket if the script 
 }
 ```
 
-## Logging
-
-Users can control logging by changing settings in `loggingconfig.json` file. By default, no logs get passed to the console and all logs are stored in the `logs` folder in `service.log` and `monitor.log` files. Users can control logging level on per endpoint basis by changing the `loglevel` setting in the monitoring config file. Available logging levels are `debug`, `info`, `warning`, `error`, `critical`.
-
 ## Starting and Stopping
 
 The canary monitor supports the following arguments at start:

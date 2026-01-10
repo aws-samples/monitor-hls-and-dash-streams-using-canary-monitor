@@ -177,8 +177,14 @@ def gothroughsegments(logger, renditionalias, renditionid, monitorinfo:dict, new
         # Check for discontinuity
         if tag == 'EXT-X-DISCONTINUITY':
           if new:
-            logger.warning(f"Discontinuity", extra={'event': 'DISCONTINUITY'})
-            utils.addmetric(logger, monitorinfo, 'Discontinuity', 1, 'Count', [{'Name': 'Rendition', 'Value': renditionid}])
+            if monitorinfo['config']['origin'] == 'emt':
+              pass
+              #if not (monitorinfo['config']['endpointconfig']['manifests']['adsegmentprefix'] in segment['name'] or monitorinfo['config']['endpointconfig']['manifests']['adsegmentprefix'] in monitorinfo['manifest'][renditionalias]['last']['segment']):
+              #  logger.warning(f"Discontinuity", extra={'event': 'DISCONTINUITY'})
+              #  utils.addmetric(logger, monitorinfo, 'Discontinuity', 1, 'Count', [{'Name': 'Rendition', 'Value': renditionid}])
+            else:
+              logger.warning(f"Discontinuity", extra={'event': 'DISCONTINUITY'})
+              utils.addmetric(logger, monitorinfo, 'Discontinuity', 1, 'Count', [{'Name': 'Rendition', 'Value': renditionid}])
       # Check for ad break on EMT origin
       # if renditionalias == 'primary':
       #   if monitorinfo['config']['origin'] == 'emt':
