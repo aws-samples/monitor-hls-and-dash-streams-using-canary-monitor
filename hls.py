@@ -92,6 +92,8 @@ def getsegmentinfo(logger, renditionalias, responselines, monitorinfo:dict, alls
         elif not allsegments:
           if mediasequence == monitorinfo['manifest'][renditionalias]['last']['segment']['msn']:
             monitorinfo['manifest'][renditionalias]['foundlastsegment'] = True
+            if line.split('?')[0] != monitorinfo['manifest'][renditionalias]['last']['segment']['name'].split('?')[0]:
+              logger.warning(f"Last segment name has changed, previously: {monitorinfo['manifest'][renditionalias]['last']['segment']['name']}, now: {line}", extra={'event': 'LAST_SEGMENT_CHANGED'})
         if implicitpdttimestamp and segmentinfo['segmentduration']:
           implicitpdttimestamp += timedelta(seconds=segmentinfo['segmentduration'])
         mediasequence += 1
