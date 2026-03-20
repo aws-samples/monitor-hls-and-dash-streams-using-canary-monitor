@@ -1,0 +1,13 @@
+application:
+  threads: false
+  json_logger: false
+  input_location: local
+
+aws:
+  region: 
+  metrics: false
+  dashboards: false
+  bucket: 
+  lambda:
+    report: 
+    logs: 
