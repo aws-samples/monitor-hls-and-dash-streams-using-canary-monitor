@@ -1,8 +1,9 @@
+> [!IMPORTANT]
+> Version 3 released 3/20/25 contains braking changes. Make sure to install all dependencies, stop using arguments and use settings.yaml file instead. Syntax in the input CSV file has changed too! The update provides major improvements to HLS and DASH stream validations and management option through AWS CloudWatch dashboard. See more info in below sections.
+
 ## Monitor HLS and DASH Streams Using Canary Monitor
 
-**Version 2 introduces operational and functional improvements.** 
-
-The canary monitor is a tool, which, like a player, downloads and inspects HLS or DASH manifests from a list of origins at regular intervals. It performs manifest and stream validations, writes logs and stores monitoring reports, sends metrics to AWS CloudWatch and creates CloudWatch dashboards. Optionally it can also download and inspect ad-tracking data for origins like AWS Elemental MediaTailor (EMT) where ad-tracking endpoints are available. It works with various origins, but has been primarily designed to monitor streams originating from AWS Elemental MediaPackage (EMP) and EMT.
+The canary monitor is a tool, which, like a player, downloads and inspects HLS or DASH manifests from a list of origins at regular intervals. It performs manifest and stream validations, writes logs and stores monitoring reports, sends metrics to AWS CloudWatch and creates CloudWatch dashboards. Optionally it can also download and inspect ad-tracking data for origins like AWS Elemental MediaTailor (EMT) where ad-tracking endpoints are available. It works with various origins, but has been primarily designed to monitor streams originating from AWS Elemental MediaPackage (EMP) and EMT. The recommended environement for running the canary monitor is an EC2 instance with Amazon Linux system. Both x86 and arm architectures are supported.
 
 [Demo.webm](https://github.com/user-attachments/assets/bb01aa1c-52a0-42cb-b444-8da890070228)
 
@@ -19,29 +20,59 @@ Python 3.9 or newer with following libraries:
 - urllib3
 - isodate
 - python-json-logger
+- pyyaml
 
 You can use `pip install -r requirements.txt` to install all required libraries at once.
 
-## User Input
+## Initial Setup and User Input
 
-The script expects the user to provide one or more HLS or DASH live stream origin endpoints to monitor. User can do so by creating or editing a CSV file in the `origins` folder after starting the tool.
+**At minimum**, you should install all Python dependencies and review the settings in `settings.yaml` file. The default settings don't make the canary monitor send any data to AWS and so you are not required to have an AWS account to run the monitor. With `input_location: local` the script expects the user to provide one or more HLS or DASH live stream origin endpoints to monitor by creating or editing a CSV file (must have .csv extension) in the `origins` folder after starting the tool.
 
-The syntax of the provided CSV file content in the `origins` folder is as follows:
+Default `settings.yaml`:
 
 ```
-# endpoint type (live), technology (hls/dash), workload name, endpoint name, origin name, monitoring config file, manifest url, tracking url [optional]
-live, dash, tnf25, feed01p1_pdx_1, emp, configs/default.json, https://abcd.mediapackage.us-west-2.amazonaws.com/out/v1/abcd/cenc.mpd
+application:
+  threads: false
+  json_logger: false
+  input_location: local
+
+aws:
+  region: 
+  metrics: false
+  dashboards: false
+  bucket: 
+  lambda:
+    report: 
+    logs: 
 ```
+
+The syntax of the CSV file content in the `origins` folder is as follows:
+
+```
+# endpoint type (live), technology (hls/dash), workload name, endpoint name, origin name, is DAI (dynami ad insertion endpoint like AWS MediaTailor), monitoring config file name, manifest url, tracking url [optional]
+live, dash, tnf25, feed01p1_pdx_1, emp, false, default.json, https://abcd.mediapackage.us-west-2.amazonaws.com/out/v1/abcd/cenc.mpd
+```
+
+**To get the most out of the canary monitor** - to run it as a service and manage all aspects of monitoring from a CloudWatch dashboard, consider setting up the environment and AWS resources using `tools/configure-and-manage.py` script. It helps you 
+
+- Create an IAM role with the necessary permissions
+- Install Python 3.12 environment with all dependencies
+- Set up canary monitor as system service
+- Set up logrotate for canary monitor logs
+- Set up AWS CloudWatch agent for forwarding logs to CloudWatch
+- Set up AWS S3 bucket for archiving manifests and report data
+- Set up AWS Lambda functions for custom CloudWatch dashboard widgets
+
+That will allow you to create configurations and workloads and start or stop monitoring endpoints using the management dashboard: 
+
 
 ### Notes on Input
 
-An origin endpoint is identified by values in the first 5 columns. Each line should have a unique endpoint identifier. VOD endpoints are currently not supported, therefore endpoint type should always be `live`. AWS Elemental MediaTailor origin endpoints should have origin name set to `emt` and a present tracking URL for ad break detection. 
+An origin endpoint is identified by values in the first 6 columns. Each line should have a unique endpoint identifier. VOD endpoints are currently not supported, therefore endpoint type should always be `live`. AWS Elemental MediaTailor origin endpoints should have DAI flag set to `true` and the tracking URL filled, as ad breaks detection and validation on such endpoints is done by using the tracking data.
 
 ### Notes on Configuration
 
-Users should create their own monitoring config files based on the default config `configs/default.json` file to match their monitoring requirements. Available HLS rendition identifiers in the config file are `"video", "audio", "subtitles", "*"`, meaning the tool can monitor one or multiple video, audio or subtitle renditions. The list in `adbreaksctesignals` provides an option to list SCTE message signal types, which are epxected ad break opportunitiy SCTE signals. Available SCTE message signal types are `"spliceinsert"` (meaning any splice insert) or an integer which represents the segmentation type id in decimal, e.g. `52` for `Provider Overlay Placement Opportunity Start` (meaning any splice insert or time signal with provided segmentation type id).
-
-If you want the tool to only send manifest requests and skip manifest parsing and validations, set `validations['perform']` setting to `false`. In this use case, especially when using the tool for load generation without manifest parsing, you might want to switch to using threads instead of processes, which you can do by starting the canary monitor with `-t` argument.
+Users should create their own monitoring config files based on the default config `configs/default.json` file to match their monitoring requirements. Available HLS rendition identifiers in the config file are `"video", "audio", "subtitles", "*"`.
 
 Default configuration settings:
 
@@ -52,40 +83,47 @@ Default configuration settings:
   "manifests": {
     "frequency": 5.0,
     "save": {
+      "s3": false,
       "local": false
     },
-    "hlsrenditions": [ "video", "audio" ],
-    "adsegmentprefix": "asset"
+    "hls_renditions": [ "video", "audio" ],
+    "ad_segment_prefix": "asset"
   },
   "tracking": {
     "frequency": 6.0,
     "get": true,
     "save": {
+      "s3": false,
       "local": false
     },
     "playhead": false,
-    "playheaddelay": 10
+    "playhead_delay": 10
   },
   "reports": {
     "frequency": 60,
     "save": {
-      "s3": false
+      "s3": true
     }
   },
   "validations": {
     "perform": true,
     "custom": {
-      "requiredrenditions": [ "video", "audio" ],
-      "adbreaksctesignals": [ "spliceinsert" ],
-      "checkadbreakscteduration": true,
-      "maxadbreakdurationdelta": 0.5,
-      "maxptsdelta": 0.1,
-      "maxfuturesegmentavailability": 10
+      "check_multivariant_change": true,
+      "required_renditions": [ "video", "audio" ],
+      "ad_break_scte_signals": [ "splice_insert", 48, 50, 52, 54, 56 ],
+      "required_tracking_events": [ "impression", "start", "firstQuartile", "midpoint", "thirdQuartile", "complete" ],
+      "check_ad_break_scte_duration": true,
+      "check_ad_break_start_time": true,
+      "max_ad_break_duration_delta": 0.5,
+      "max_pts_delta": 0.1,
+      "max_segment_availability_delta": {
+        "in_past": 15,
+        "in_future": 5
+      }
     }
   }
 }
 ```
-
 
 ## Dynamic Handling of Changes
 
@@ -93,33 +131,34 @@ The canary monitor picks changes in the input CSV files and in the monitoring co
 
 ## CloudWatch Metrics and Dashboards
 
-To prevent the canary monitor from using AWS resources, use `-na` or `--no-aws` argument at start.
-
 The tool sends metrics to CloudWatch for an endpoint if the endpoint is configured with `"cwmetrics": true` setting in the config file. If a user runs the script on an Amazon EC2 instance, they should have an IAM role with `cloudwatch:PutMetricData` permission assigned to the EC2 instance. Otherwise, they should have an IAM user with `cloudwatch:PutMetricData` permission configured with `aws configure` command on the machine where they run the script. User can control the AWS region for publishing metrics by `-r` or `--region` argument at start.
 
 The canary monitor automatically creates or updates CloudWatch dashboards anytime a change is detected in the list of monitored endpoints. The tool groups the monitored endpoints by workload and origin name when creating the dasbhoards, meaning endpoints with the same workload and origin name are part of the same dashboard. Dashboards include only relevant metrics based on the values in the monitoring config file.
 
-The dashboard includes a custom widget which calls an AWS Lambda function to create a table with additional information about health of each endpoint. The lambda function See the [Reporting](#Reporting) section for more info.
+The dashboard includes a custom widget which calls an AWS Lambda function to create a table with additional information about health of each endpoint.
 
 ### CloudWatch Metrics
 
 Common dimensions for all metrics are `Type`, `Technology`, `Workload`, `Endpoint` and `Origin` which identify each endpoint.
 
-| Domain    | Metric Name        | Additional Metric Dimensions   | Description                                                                                                                                                    |
-|-----------|--------------------|--------------------------------|----------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| Manifests | Discontinuity      | Rendition                      | Discontinuity in segments timeline                                                                                                                             |
-| Manifests | BufferFillDuration | Rendition                      | Sum of new segment durations in a rolling 20 seconds time window                                                                                               |
-| Manifests | Latency            | RequestType, Rendition         | HTTP request latency in milliseconds                                                                                                                           |
-| Manifests | Request            | RequestType, Rendition, Status | HTTP request response with "Status" dimension one of "4xx", "5xx" or "failure"                                                                                 |
-| Manifests | PdtDelta           |                                | Only for HLS. Difference between program date time of the last segment and current wall clock time. Published for HLS when EXT-X-PROGRAM-DATE-TIME is present. |
-| Manifests | PtsDelta           |                                | Only for DASH. The maximum difference between (t + d - pto)/timescale of last segments in the last period across all segment templates.                        |
-| Tracking  | Latency            | RequestType                    | HTTP request latency in milliseconds                                                                                                                           |
-| Tracking  | Request            | RequestType, Status            | HTTP request response with "Status" dimension one of "4xx", "5xx" or "failure"                                                                                 |
-| Ad breaks | Start              | AdBreakType                    | Start of ad break with "AdBreakType" dimension one of "regular" or "overlay"                                                                                   |
-| Ad breaks | AdvertisedDuration | AdBreakType                    | Ad break SCTE duration in seconds with "AdBreakType" dimension one of "regular" or "overlay"                                                                   |
-| Ad breaks | SegmentsDuration   | AdBreakType                    | Ad break segments duration sum in seconds with "AdBreakType" dimension one of "regular" or "overlay"                                                           |
-| Ad breaks | DurationDelta      | AdBreakType                    | Duration delta between advertised ad break duration and sum of ad break segments with "AdBreakType" dimension one of "regular" or "overlay"                    |
-| Ad breaks | AvailNum           | AdBreakType                    | Only for DASH. Ad break avail num from SCTE splice insert message with "AdBreakType" dimension one of "regular" or "overlay"                                   |
+| Domain    | Metric Name              | Additional Metric Dimensions   | Description                                                                                                                                                                                         |
+|-----------|--------------------------|--------------------------------|-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| Manifests | Discontinuity            | Rendition                      | Discontinuity in segments timeline                                                                                                                                                                  |
+| Manifests | BufferFillDuration       | Rendition                      | Sum of new segment durations in a rolling 20 seconds time window                                                                                                                                    |
+| Manifests | Latency                  | RequestType, Rendition         | HTTP request latency in milliseconds                                                                                                                                                                |
+| Manifests | Request                  | RequestType, Rendition, Status | HTTP request response with "Status" dimension one of "4xx", "5xx" or "failure"                                                                                                                      |
+| Manifests | PdtDelta                 |                                | Only for HLS. Difference between program date time of the last segment and current wall clock time. Published for HLS when EXT-X-PROGRAM-DATE-TIME is present.                                      |
+| Manifests | PtsDelta                 |                                | Only for DASH. The maximum difference between (t + d - pto)/timescale of last segments in the last period across all segment templates.                                                             |
+| Manifests | ManifestDuration         | Rendition                      | Manifest duration in seconds                                                                                                                                                                        |
+| Segments  | SegmentDuration          | Rendition                      | Segment duration in seconds                                                                                                                                                                         |
+| Segments  | SegmentAvailabilityDelta |                                | Only for DASH. Difference between segment availability of the last segment computed as availabilityStartTime + period start + (t – presentationTimeOffset) / timescale and current wall clodk time. | 
+| Tracking  | Latency                  | RequestType                    | HTTP request latency in milliseconds                                                                                                                                                                |
+| Tracking  | Request                  | RequestType, Status            | HTTP request response with "Status" dimension one of "4xx", "5xx" or "failure"                                                                                                                      |
+| Ad breaks | Start                    | AdBreakType                    | Start of ad break with "AdBreakType" dimension one of "regular" or "overlay"                                                                                                                        |
+| Ad breaks | AdvertisedDuration       | AdBreakType                    | Ad break SCTE duration in seconds with "AdBreakType" dimension one of "regular" or "overlay"                                                                                                        |
+| Ad breaks | SegmentsDuration         | AdBreakType                    | Ad break segments duration sum in seconds with "AdBreakType" dimension one of "regular" or "overlay"                                                                                                |
+| Ad breaks | DurationDelta            | AdBreakType                    | Duration delta between advertised ad break duration and sum of ad break segments with "AdBreakType" dimension one of "regular" or "overlay"                                                         |
+| Ad breaks | AvailNum                 | AdBreakType                    | Only for DASH. Ad break avail num from SCTE splice insert message with "AdBreakType" dimension one of "regular" or "overlay"                                                                        |
 
 Example CloudWatch dashboard dynamically created by the canary monitor tool:
 
@@ -134,25 +173,33 @@ You can enable JSON format logging by providing `-jl` argument at start. You can
 
 Key log events include the following warnings and errors (the code name is included in the logs only when logging in JSON format):
 
-| Impact      | Event Code Name                   | Description                                                                                                                                                                                                                                                                            |
-|-------------|-----------------------------------|----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| Playback    | MANIFEST_PARSE_ERROR              | Occurs when the canary monitor encounters an issue parsing the manifest                                                                                                                                                                                                                |
-| Playback    | NON_COMPLIANT_MANIFEST            | Occurs when the canary monitor encounters a non-comppliance in an HLS or DASH manifest                                                                                                                                                                                                 |
-| Playback    | STALE_MANIFEST                    | Occurs when manifest contains no new segments in last 20 seconds                                                                                                                                                                                                                       |
-| Playback    | LAST_SEGMENT_NOT_FOUND            | Occurs when last known segment is not found in the most recent manifest, e.g. the manifest goes backwards. This can happen for example when manifests are cached for longer than is the request time between manifests.                                                                |
-| Playback    | LAST_SEGMENT_CHANGED              | Occurs when last known segment (identified by media sequence number in HLS and period id and t value in DASH) from previous manifest request is found, but name of the segment has changed.                                                                                             |
-| Playback    | DISCONTINUITY                     | Occurs when EXT-X-DISCONTINUITY is found in an HLS manifest. Occurs when "t" value of segment n + 1 does not equal "t" + "d" value of segment n and segments are in the same DASH manifest period.                                                                                     |
-| Playback    | MULTIVARIANT_MANIFEST_CHANGED     | Occurs when HLS multivariant manifest has changed                                                                                                                                                                                                                                      |
-| Playback    | AVAILABILITY_START_TIME_NOT_FOUND | Occurs when availabilityStartTime is missing in DASH manifest                                                                                                                                                                                                                          |
-| Playback    | ORIGIN_ACTIVE_INPUT_CHANGED       | Occurs when AWS MediaPackage active input changes from one pipeline to another based on "X-Amzn-Mediapackage-Active-Input" header values                                                                                                                                               |
-| Playback    | ORIGIN_ENDPOINT_CHANGED           | Occurs when AWS MediaPackage endpoint changes as result of CDN origin failover based on "CMSD-Static" header values                                                                                                                                                                    |     
-| Playback    | SEGMENT_AVAILABILITY_IN_FUTURE    | Occurs when a DASH segment availability time computed as availabilityStartTime + period start + (t – presentationTimeOffset) / timescale is more than "maxfuturesegmentavailability" seconds in the future when compared with the wall clock time of when manifest was received        |
-| Playback    | RENDITION_NOT_FOUND               | Occurs when a rendition listed in "requiredrenditions" is missing                                                                                                                                                                                                                      |
-| Advertising | BACK_TO_BACK_AD_BREAK             | Occurs when a new ad break starts while another ad break is in progress                                                                                                                                                                                                                |
-| Advertising | MULTIPLE_SEGMENTATION_DESCRIPTORS | Occurs when manifest ad break decoration contains multiple segmentation descriptors, which can lead to a failure to detect an ad break opportunity                                                                                                                                     |
-| Advertising | AD_BREAK_DURATION_DELTA_BREACHED  | Occurs when the sum of segment durations between ad break start and end does not match the advertised ad break duration +- value in "maxadbreakdurationdelta" in seconds. This can happen when an ad break is cut short early or when the manifest ad break decorations are incorrect. |
-| Advertising | AD_BREAK_DURATION_NOT_FOUND       | Occurs when an ad break is advertised without duration and "checkadbreakscteduration" is set                                                                                                                                                                                           |
-| Advertising | UNEXPECTED_AD_BREAK_SCTE_SIGNAL   | Occurs when an ad break start manifest decoration is found, but the SCTE message type is not in the "adbreaksctesignals" list                                                                                                                                                          |
+| Impact      | Event Code Name                      | Description                                                                                                                                                                                                                                                                                            |
+|-------------|--------------------------------------|--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| Playback    | MANIFEST_PARSE_ERROR                 | Occurs when the canary monitor encounters an issue parsing the manifest.                                                                                                                                                                                                                               |
+| Playback    | NON_COMPLIANT_MANIFEST               | Occurs when the canary monitor encounters a non-comppliance in an HLS or DASH manifest.                                                                                                                                                                                                                |
+| Playback    | STALE_MANIFEST                       | Occurs when manifest contains no new segments in last 20 seconds.                                                                                                                                                                                                                                      |
+| Playback    | LIP_SYNC                             | Occurs when the last manifest segments across all renditions have PTS values which differ by more than what is configured in "max_pts_delta" in the config file.                                                                                                                                       |
+| Playback    | LAST_SEGMENT_NOT_FOUND               | Occurs when last known segment identified by media sequence number in HLS and period id and t value in DASH is not found in the most recent manifest, e.g. the manifest goes backwards.                                                                                                                |
+| Playback    | LAST_SEGMENT_CHANGED                 | Occurs when last known segment identified by media sequence number in HLS and period id and t value in DASH from previous manifest request is found, but name of the segment has changed.                                                                                                              |
+| Playback    | DISCONTINUITY                        | Occurs when EXT-X-DISCONTINUITY is found in an HLS manifest. Occurs when "t" value of segment n + 1 does not equal "t" + "d" value of segment n.                                                                                                                                                       |
+| Playback    | MULTIVARIANT_MANIFEST_CHANGED        | Occurs when HLS multivariant manifest changed and origin is not DAI.                                                                                                                                                                                                                                   |
+| Playback    | INCONSISTENT_MANIFEST_PERIODS        | Occurs when DASH manifest doesn't contain all and exactly the same periods in the same order from previous manifest request other than periods which rolled over.                                                                                                                                      |
+| Playback    | DUPLICATE_PERIOD                     | Occurs when DASH manifest contains more than one period with the same id.                                                                                                                                                                                                                              |
+| Playback    | DIFFERENT_SEGMENT_TEMPLATES          | Occurs when number of segments across segment templates is different or n number of last segment across segment templates is different.                                                                                                                                                                | 
+| Playback    | AVAILABILITY_START_TIME_NOT_FOUND    | Occurs when availabilityStartTime is missing in DASH manifest.                                                                                                                                                                                                                                         |
+| Playback    | ORIGIN_ACTIVE_INPUT_CHANGED          | Occurs when AWS MediaPackage active input changed from one pipeline to another based on "X-Amzn-Mediapackage-Active-Input" header values.                                                                                                                                                              |
+| Playback    | ORIGIN_ENDPOINT_CHANGED              | Occurs when AWS MediaPackage endpoint changed as result of CDN origin failover based on "CMSD-Static" header values.                                                                                                                                                                                   |     
+| Playback    | SEGMENT_AVAILABILITY_DELTA           | Occurs when a DASH segment availability time computed as availabilityStartTime + period start + (t – presentationTimeOffset) / timescale on any new segment is more than "max_future_segment_availability" seconds in the future when compared with the wall clock time of when manifest was received. |
+| Playback    | RENDITION_NOT_FOUND                  | Occurs when a rendition listed in "required_renditions" is missing.                                                                                                                                                                                                                                    |
+| Playback    | MULTIPLE_VIDEO_ADAPTATION_SETS       | Occurs when a DASH period has multiple video adaptation sets.                                                                                                                                                                                                                                          |
+| Playback    | NON_LIVE_MANIFEST                    | Occurs when a DASH manifest type is not "dynamic" or HLS manfiest is VOD.                                                                                                                                                                                                                              |
+| Advertising | BACK_TO_BACK_AD_BREAK                | Occurs when a new ad break starts while another ad break is in progress.                                                                                                                                                                                                                               |
+| Advertising | MULTIPLE_SEGMENTATION_DESCRIPTORS    | Occurs when manifest ad break decoration contains multiple segmentation descriptors, which can lead to a failure to detect an ad break opportunity.                                                                                                                                                    |
+| Advertising | AD_BREAK_DURATION_DELTA_BREACHED     | Occurs when the sum of segment durations between ad break start and end does not match the advertised ad break duration +- value in "max_ad_break_duration_delta" in seconds. This can happen when an ad break is cut short early or when the manifest ad break decorations are incorrect.             |
+| Advertising | AD_BREAK_DURATION_NOT_FOUND          | Occurs when an ad break is advertised without duration and "check_ad_break_scte_duration" is set.                                                                                                                                                                                                      |
+| Advertising | MULTIPLE_AD_BREAK_OPPORTUNITY_EVENTS | Occurs when a period in DASH manifest has more than one ad break opportunity start event in the EventStream.                                                                                                                                                                                           |
+| Advertising | MISSING_REQUIRED_TRACKING_EVENTS     | Occurs when an ad in the tracking data doesn't contain all required tracking events listed in "required_tracking_events" config validation list.                                                                                                                                                       | 
+| Advertising | AD_BREAK_START_TIME_IN_PAST          | Occurs when requesting tracking data with playehad and the avail start time for a new ad break in the tracking data is in the past when compared to the current playhead                                                                                                                               | 
 
 
 ## Reporting
@@ -161,112 +208,46 @@ Important information about each monitored endpoint (e.g. ad break info) is stor
 
 The tool can store report files automatically in an AWS S3 bucket if the script is started with a provided bucket name using`-b` option and when configuration JSON contains `"s3": true` in the "reports" section. When reports are saved to CloudWatch, the auto created CloudWatch dashboard includes a custom widget, which can contain analysed report data by an AWS Lambda function. If you want to have the reports analysed in the dashboard, you need to store the provided 2 AWS Lambda functions in the `lambda` folder to your AWS account and start the script with `-l` argument which takes as argument the arn pointing to the `canary-monitor-report-analyser` AWS Lambda function. Both AWS Lambda functions require an IAM role with access to the S3 bucket where reports are getting saved.
 
+Example of data captured in a report file.
+
 ```
-{
-  "adbreaks": {
-    "4281068": {
-      "observed": "2025-07-30 19:11:58.925605+00:00",
-      "advertisedduration": 30.0,
-      "segmentsduration": 30.0,
-      "type": "regular",
-      "durationdelta": 0.0
-    }
-  },
-  "periods": {
-    "4279875": {
-      "observed": null,
-      "compact": true,
-      "isadbreak": false,
-      "spliceinfo": []
-    },
-    "4281068": {
-      "observed": "2025-07-30 19:11:58.925605+00:00",
-      "compact": true,
-      "isadbreak": true,
-      "spliceinfo": [
-        {
-          "type": "spliceinsert",
-          "outofnetwork": true,
-          "availnum": 1,
-          "duration": 30.0,
-          "descriptors": [
-            {
-              "segmentationtype": 52,
-              "segmentationmessage": "Provider Placement Opportunity Start",
-              "duration": 30.0
-            }
-          ]
-        }
-      ]
-    },
-    "4281083": {
-      "observed": "2025-07-30 19:12:29.135682+00:00",
-      "compact": true,
-      "isadbreak": false,
-      "spliceinfo": []
-    }
-  }
-}
+"ad_breaks": {
+      "443366461": {
+        "observed": 2026-03-14 05:30:06.237362+00:00,
+        "scte_message": {
+          "raw": "0xFC305E00000000000000FFF01405000000037FEFFE8C21EAD8FE00A4CB80000103010039023743554549000000017FCF0000A4CB800C2141424344617373657449643A636B616C64742D4550303135333331383130313931340000000035C8D9F7",
+          "decoded": {
+            "type": "splice_insert",
+            "out_of_network": true,
+            "splice_event_id": 3,
+            "splice_immediate": false,
+            "auto_return": true,
+            "duration": 120.0,
+            "avail_num": 3,
+            "descriptors": [
+              {
+                "segmentation_type": 52,
+                "segmentation_message": "Provider Placement Opportunity Start",
+                "duration": 120.0,
+                "upid_private_data": "assetId:ckaldt-EP015331810191"
+              }
+            ]
+          }
+        },
+        "advertised_duration": 120.0,
+        "segments_duration": 37.8,
+        "daterange_id": "1773465840966-34-1",
+        "is_opportunity": true,
+        "type": "regular",
+        "duration_delta": -82.2
+      }
 ```
 
 ## Starting and Stopping
 
-The canary monitor supports the following arguments at start:
+You can start the canary monitor with `python3 canarymonitor.py` after you confirmed settings in `settings.yaml` file. After that you can update existing CSV files or create new CSV files in the `origins` folder with each endpoint represented by one line in the CSV file. You should use `ctrl+c` or `kill -2 PID` to stop the canary monitor where PID is the process number as logged on each line in the `logs/service.log` log file.
 
-```
-$ ./canarymonitor.py -h
-usage: canarymonitor.py [-h] [-t] [-na] [-r REGION] [-b BUCKET] [-l LAMBDA_FUNCTION] [-jl]
-
-optional arguments:
-  -h, --help            show this help message and exit
-  -t, --threads         use threads instead of processes
-  -na, --no-aws         do not use any AWS resources
-  -r REGION, --region REGION
-                        AWS region to use, default: us-west-2
-  -b BUCKET, --bucket BUCKET
-                        AWS S3 bucket name for archive
-  -l LAMBDA_FUNCTION, --lambda-function LAMBDA_FUNCTION
-                        AWS Lambda arn for AWS CloudWatch dashboard reporting widget
-  -jl, --json-logger    log using JSON format if python-json-logger is available
-```
-
-Command line example:
-
-```
-./canarymonitor.py -jl -b canary-monitor-012345678910 -l arn:aws:lambda:us-west-2:012345678910:function:canary-monitor-analyzer
-```
-
-You should use `ctrl+c` or `kill -2 PID` to stop the canary monitor where PID is the process number as logged on each line in the `logs/service.log` log file.
-
-### Running as a Service
-
-Below are instructions for running the canary monitor as a system service on an EC2 instance with Amazon Linux. The steps assume that the user sshed to the instance and cloned the repo into `/home/ec2-user/` home folder. At the end of the steps, user can start the tool with `sudo systemctl start canarymonitor` and stop with `sudo systemctl stop canarymonitor`.
-
-```
-1. sudo touch /etc/systemd/system/canarymonitor.service
-2. Edit /etc/systemd/system/canarymonitor.service to contain the following
-
-[Unit]
-Description=Canary Monitor for HLS and DASH streams
-After=network.target
-
-[Service]
-Type=simple
-User=ec2-user
-WorkingDirectory=/home/ec2-user/monitor-hls-and-dash-streams-using-canary-monitor/
-ExecStart=/usr/bin/python3 /home/ec2-user/monitor-hls-and-dash-streams-using-canary-monitor/canarymonitor.py -jl -b canary-monitor-012345678910 -l arn:aws:lambda:us-west-2:012345678910:function:canary-monitor-report-analyser
-Restart=no
-
-[Install]
-WantedBy=multi-user.target
-
-3. sudo systemctl daemon-reload
-4. sudo systemctl start canarymonitor
-
-To confirm that canary monitor is running check the logs/service.log file. If you don't see any logs or canary is not starting, check journal logs for errors with
-
-sudo journalctl -u canarymonitor
-```
+Use the `tools/configure-and-manage.py` and `Setup Host System` menu option to configure canary monitor as service.
 
 ## License
 

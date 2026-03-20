@@ -1,34 +1,32 @@
-{% set positions = initpositions() %}
 {
+  "start": "-PT15M",
+  "end": "PT0H",
   "widgets": [
-    {% set positions = getpositions('header') %}{% include 'widgets/headers/metrics' %}
-    {% set positions = getpositions('metric') %},{% include 'widgets/metrics/bufferFillDuration' %}
-    {% set positions = getpositions('metric') %},{% include 'widgets/metrics/discontinuity' %}
-    {% set positions = getpositions('metric') %},{% include 'widgets/metrics/manifestLatency' %}
-    {% set positions = getpositions('metric') %},{% include 'widgets/metrics/manifest4xx' %}
-    {% set positions = getpositions('metric') %},{% include 'widgets/metrics/manifest5xx' %}
-    {% set positions = getpositions('metric') %},{% include 'widgets/metrics/manifestFailure' %}
-    {% set positions = getpositions('metric') %},{% include 'widgets/metrics/pdtDelta' %}
-    {% set positions = getpositions('metric') %},{% include 'widgets/metrics/ptsDelta' %}
-    {% set positions = getpositions('metric') %},{% include 'widgets/metrics/overlayAdBreak' %}
-    {% set positions = getpositions('metric') %},{% include 'widgets/metrics/regularAdBreak' %}
-    {% set positions = getpositions('metric') %},{% include 'widgets/metrics/adBreakAdvertisedDuration' %}
-    {% set positions = getpositions('metric') %},{% include 'widgets/metrics/adBreakSegmentsDuration' %}
-    {% set positions = getpositions('metric') %},{% include 'widgets/metrics/adBreakDurationDelta' %}
-    {% set positions = getpositions('metric') %},{% include 'widgets/metrics/adAvailNum' %}
-    {% if renderinfo['trackingrequests'] and renderinfo['origin'] == 'emt' %}
-      {% set positions = getpositions('metric') %},{% include 'widgets/metrics/adBreakFillRate' %}
-      {% set positions = getpositions('metric') %},{% include 'widgets/metrics/trackingLatency' %}
-      {% set positions = getpositions('metric') %},{% include 'widgets/metrics/tracking4xx' %}
-      {% set positions = getpositions('metric') %},{% include 'widgets/metrics/tracking5xx' %}
-      {% set positions = getpositions('metric') %},{% include 'widgets/metrics/trackingFailure' %}
+    {% include 'widgets/custom/report' %},
+    {% include 'widgets/custom/logs' %},
+    {% include 'widgets/metrics/manifestDuration' %},
+    {% include 'widgets/metrics/segmentDuration' %},
+    {% include 'widgets/metrics/bufferFillDuration' %},
+    {% include 'widgets/metrics/discontinuity' %},
+    {% include 'widgets/metrics/manifestLatency' %},
+    {% include 'widgets/metrics/manifest4xx' %},
+    {% include 'widgets/metrics/manifest5xx' %},
+    {% include 'widgets/metrics/manifestFailure' %},
+    {% include 'widgets/metrics/pdtDelta' %},
+    {% if renderinfo['includes_dash'] %}
+      {% include 'widgets/metrics/ptsDelta' %},
+      {% include 'widgets/metrics/segmentAvailabilityDelta' %},
     {% endif %}
-    {% if dashboardconfig['report']['lambda'] %}
-      {% set positions = getpositions('header') %},{% include 'widgets/headers/analytics' %}
-      {% set positions = getpositions('report') %},{% include 'widgets/custom/analytics' %}
+    {% include 'widgets/metrics/adBreak' %},
+    {% include 'widgets/metrics/adBreakAdvertisedDuration' %},
+    {% include 'widgets/metrics/adBreakSegmentsDuration' %},
+    {% include 'widgets/metrics/adBreakDurationDelta' %}
+    {% if renderinfo['trackingrequests'] %}
+      ,{% include 'widgets/metrics/adBreakFillRate' %},
+      {% include 'widgets/metrics/trackingLatency' %},
+      {% include 'widgets/metrics/tracking4xx' %},
+      {% include 'widgets/metrics/tracking5xx' %},
+      {% include 'widgets/metrics/trackingFailure' %}
     {% endif %}
-    {% set positions = getpositions('header') %},{% include 'widgets/headers/logs' %}
-    {% set positions = getpositions('loginsights') %},{% include 'widgets/loginsights/monitor' %}
-    {% set positions = getpositions('loginsights') %},{% include 'widgets/loginsights/service' %}
   ]
 }

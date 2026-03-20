@@ -1,9 +1,10 @@
 import logging
 import logging.config
-from canarymonitor import getloggeradapterclass
+import os
+from loggeradapter import getloggeradapterclass
 import traceback
 import utils
-from urllib.parse import urljoin
+from urllib.parse import urljoin, urlparse
 import threading
 import time
 import re
@@ -55,11 +56,13 @@ def resetsegmentinfo():
   }
 
 
-def getsegmentinfo(logger, renditionalias, responselines, monitorinfo:dict, allsegments:bool=False):
+def getsegmentinfo(logger, renditionid, renditionalias, responselines, monitorinfo:dict, allsegments:bool=False):
   try:
     mediasequence = monitorinfo['manifest'][renditionalias]['mediasequence']
     implicitpdttimestamp = None
     segmentinfo = resetsegmentinfo()
+    manifestduration = 0.0
+    # Go through all lines in manifest file
     for line in responselines:
       line = line.strip()
       if line.startswith('#'):
@@ -69,6 +72,7 @@ def getsegmentinfo(logger, renditionalias, responselines, monitorinfo:dict, alls
           match = re.match(r'^\d*\.?\d+', value)
           if match:
             segmentinfo['segmentduration'] = float(match.group()) # type: ignore
+            manifestduration += segmentinfo['segmentduration']
         elif tag == 'EXT-X-PROGRAM-DATE-TIME':
           if value.endswith('Z'):
             value = value[:-1] + '+00:00'
@@ -80,7 +84,8 @@ def getsegmentinfo(logger, renditionalias, responselines, monitorinfo:dict, alls
             'msn': mediasequence,
             'pdt': implicitpdttimestamp,
             'tags': segmentinfo['tags'],
-            'name': line
+            'uri': line,
+            'name': os.path.basename(urlparse(line).path)
           }
           if segmentinfo['segmentduration']:
             segment['dsec'] = round(segmentinfo['segmentduration'], 3)
@@ -89,34 +94,38 @@ def getsegmentinfo(logger, renditionalias, responselines, monitorinfo:dict, alls
               logger.debug(f"Found new segment: {utils.printdictionary(logger, segment)}")
           else:
             logger.warning(f"Segment has no duration, segment: {segment}", extra={'event': 'NON_COMPLIANT_MANIFEST'})
+            continue
         elif not allsegments:
           if mediasequence == monitorinfo['manifest'][renditionalias]['last']['segment']['msn']:
             monitorinfo['manifest'][renditionalias]['foundlastsegment'] = True
-            if line.split('?')[0] != monitorinfo['manifest'][renditionalias]['last']['segment']['name'].split('?')[0]:
-              logger.warning(f"Last segment name has changed, previously: {monitorinfo['manifest'][renditionalias]['last']['segment']['name']}, now: {line}", extra={'event': 'LAST_SEGMENT_CHANGED'})
+            if line.split('?')[0] != monitorinfo['manifest'][renditionalias]['last']['segment']['uri'].split('?')[0]:
+              logger.warning(f"URI of segment with sequence id {mediasequence} has changed, previously: {monitorinfo['manifest'][renditionalias]['last']['segment']['uri']}, now: {line}", extra={'event': 'LAST_SEGMENT_CHANGED'})
         if implicitpdttimestamp and segmentinfo['segmentduration']:
           implicitpdttimestamp += timedelta(seconds=segmentinfo['segmentduration'])
         mediasequence += 1
         segmentinfo = resetsegmentinfo()
+    # Send metric for manifest duration
+    utils.addmetric(logger, monitorinfo, 'ManifestDuration', round(manifestduration), 'Seconds', [{'Name': 'Rendition', 'Value': renditionid}])
   except Exception as e:
     logger.error(f"Error getting segment info. Exception: {str(e)} Traceback: {traceback.format_exc()}", extra={'event': 'INTERNAL_ERROR'})
 
 
 def startadbreak(logger, segment, monitorinfo:dict, new, adbreak:dict):
   try:
-    # Check for nested ad break
+    # Check for back to back ad break
     if monitorinfo['manifest']['primary']['currentadbreak']:
-      logger.warning(f"New ad break started without proper ending of previous ad break", extra={'event': 'BACK_TO_BACK_AD_BREAK'})
+      logger.warning(f"Back to back ad break without proper closure of previous ad break", extra={'event': 'BACK_TO_BACK_AD_BREAK'})
+      endadbreak(logger, segment, monitorinfo, new)
     # Update current ad break
-    monitorinfo['manifest']['primary']['currentadbreak'] = {'id': segment['msn'], 'daterangeid': adbreak.get('daterangeid', '')}
-    # Update reporting
-    monitorinfo['reporting']['adbreaks'][segment['msn']] = adbreak
+    monitorinfo['manifest']['primary']['currentadbreak'] = {'id': segment['msn'], 'daterange_id': adbreak.get('daterange_id', '')}
+    # Update ad breaks info
+    monitorinfo['adbreaks'][segment['msn']] = adbreak
     if new:
       # Send metrics for ad break start and advertised duration if present
       utils.addmetric(logger, monitorinfo, 'Start', 1, 'Count', [{'Name': 'AdBreakType', 'Value': adbreak['type']}])
-      if adbreak.get('advertisedduration') and adbreak['advertisedduration'] > 0:
-        utils.addmetric(logger, monitorinfo, 'AdvertisedDuration', adbreak['advertisedduration'], 'Seconds', [{'Name': 'AdBreakType', 'Value': adbreak['type']}])
-      elif monitorinfo['config']['endpointconfig']['validations']['custom']['checkadbreakscteduration']:
+      if adbreak.get('advertised_duration') and adbreak['advertised_duration'] > 0:
+        utils.addmetric(logger, monitorinfo, 'AdvertisedDuration', adbreak['advertised_duration'], 'Seconds', [{'Name': 'AdBreakType', 'Value': adbreak['type']}])
+      elif monitorinfo['config']['endpointconfig']['validations']['custom']['check_ad_break_scte_duration']:
         logger.warning(f"Ad break has no duration", extra={'event': 'AD_BREAK_DURATION_NOT_FOUND'})
   except Exception as e:
     logger.error(f"Error at ad break start. Exception: {str(e)} Traceback: {traceback.format_exc()}", extra={'event': 'INTERNAL_ERROR'})
@@ -124,11 +133,12 @@ def startadbreak(logger, segment, monitorinfo:dict, new, adbreak:dict):
 
 def endadbreak(logger, segment, monitorinfo:dict, new):
   try:
-    adbreakid = monitorinfo['manifest']['primary']['currentadbreak']['id']
-    utils.updateadbreakdurationdelta(logger, monitorinfo, adbreakid, new)
+    currentadbkreakid = monitorinfo['manifest']['primary']['currentadbreak'].get('id')
+    if currentadbkreakid:
+      utils.updateadbreakdurationdelta(logger, monitorinfo, currentadbkreakid, new)
     if new:
       # Send metric for ad break segments duration
-      utils.addmetric(logger, monitorinfo, 'SegmentsDuration', monitorinfo['reporting']['adbreaks'][adbreakid]['segmentsduration'], 'Seconds', [{'Name': 'AdBreakType', 'Value': monitorinfo['reporting']['adbreaks'][adbreakid]['type']}])
+      utils.addmetric(logger, monitorinfo, 'SegmentsDuration', monitorinfo['adbreaks'][currentadbkreakid]['segments_duration'], 'Seconds', [{'Name': 'AdBreakType', 'Value': monitorinfo['adbreaks'][currentadbkreakid]['type']}])
     # Clear current ad break
     monitorinfo['manifest']['primary']['currentadbreak'] = {}
   except Exception as e:
@@ -140,16 +150,27 @@ def gothroughsegments(logger, renditionalias, renditionid, monitorinfo:dict, new
     for segment in monitorinfo['manifest'][renditionalias]['new']['segments']:
       # Go through segment tags
       for tag, value in segment['tags']:
-        # Check for ad break on non EMT origins
+        # Check for ad break on non DAI origins
         if renditionalias == 'primary':
-          if monitorinfo['config']['origin'] != 'emt':
+          if monitorinfo['config']['isdai']:
+            pass
+          else:
             if tag == 'EXT-X-CUE-OUT':
+              base64 = ''
+              for t, v in segment['tags']:
+                if t == 'EXT-OATCLS-SCTE35':
+                  base64 = v
+                  break
               adbreak = {
                 'observed': f"{datetime.now(timezone.utc)}" if new else None,
-                'type': 'regular',
-                'advertisedduration': parsetag(logger, tag, value),
-                'segmentsduration': 0.0
+                'scte_message': {
+                  'raw': base64,
+                  'decoded': utils.decodesctestring(logger, base64)
+                },
+                'advertised_duration': parsetag(logger, tag, value),
+                'segments_duration': 0.0
               }
+              utils.checkifadbreak(logger, monitorinfo, adbreak)
               startadbreak(logger, segment, monitorinfo, new, adbreak)
             elif tag == 'EXT-X-CUE-IN':
               if monitorinfo['manifest']['primary']['currentadbreak']:
@@ -162,40 +183,42 @@ def gothroughsegments(logger, renditionalias, renditionid, monitorinfo:dict, new
                   duration = parseddaterange.get('DURATION') if 'DURATION' in parseddaterange.keys() else parseddaterange.get('PLANNED-DURATION')
                   adbreak = {
                     'observed': f"{datetime.now(timezone.utc)}" if new else None,
-                    'sctemessage': {
+                    'scte_message': {
                       'raw': sctestring,
                       'decoded': utils.decodesctestring(logger, sctestring)
                     },
-                    'advertisedduration': float(duration) if duration else None,
-                    'segmentsduration': 0.0,
-                    'daterangeid': parseddaterange.get('ID', '')
+                    'advertised_duration': float(duration) if duration else None,
+                    'segments_duration': 0.0,
+                    'daterange_id': parseddaterange.get('ID', '')
                   }
                   utils.checkifadbreak(logger, monitorinfo, adbreak)
                   startadbreak(logger, segment, monitorinfo, new, adbreak)
               elif 'SCTE35-IN=' in value:
                 if monitorinfo['manifest']['primary']['currentadbreak']:
-                  if parseddaterange.get('ID', '') == monitorinfo['manifest']['primary']['currentadbreak']['daterangeid']:
+                  if parseddaterange.get('ID', '') == monitorinfo['manifest']['primary']['currentadbreak']['daterange_id']:
                     endadbreak(logger, segment, monitorinfo, new)
         # Check for discontinuity
         if tag == 'EXT-X-DISCONTINUITY':
+          ad_break_boundary = False
           if new:
-            if monitorinfo['config']['origin'] == 'emt':
-              pass
-              #if not (monitorinfo['config']['endpointconfig']['manifests']['adsegmentprefix'] in segment['name'] or monitorinfo['config']['endpointconfig']['manifests']['adsegmentprefix'] in monitorinfo['manifest'][renditionalias]['last']['segment']):
-              #  logger.warning(f"Discontinuity", extra={'event': 'DISCONTINUITY'})
-              #  utils.addmetric(logger, monitorinfo, 'Discontinuity', 1, 'Count', [{'Name': 'Rendition', 'Value': renditionid}])
+            if monitorinfo['config']['isdai']:
+              segment_name = os.path.basename(urlparse(segment['uri']).path)
+              if monitorinfo['config']['endpointconfig']['manifests']['ad_segment_prefix'] in segment['name'] or monitorinfo['config']['endpointconfig']['manifests']['ad_segment_prefix'] in monitorinfo['manifest'][renditionalias]['last']['segment']['name']:
+                ad_break_boundary = True
+            if ad_break_boundary:
+              logger.debug(f"Discontinuity on ad break boundary")
             else:
               logger.warning(f"Discontinuity", extra={'event': 'DISCONTINUITY'})
               utils.addmetric(logger, monitorinfo, 'Discontinuity', 1, 'Count', [{'Name': 'Rendition', 'Value': renditionid}])
       # Check for ad break on EMT origin
       # if renditionalias == 'primary':
       #   if monitorinfo['config']['origin'] == 'emt':
-      #     if monitorinfo['config']['endpointconfig']['manifests']['adsegmentprefix'] in segment['name']:
+      #     if monitorinfo['config']['endpointconfig']['manifests']['ad_segment_prefix'] in segment['name']:
       #       if not monitorinfo['manifest']['primary']['currentadbreak']:
       #         adbreak = {
       #           'observed': f"{datetime.now(timezone.utc)}" if new else None,
-      #           'advertisedduration': None,
-      #           'segmentsduration': 0.0,
+      #           'advertised_duration': None,
+      #           'segments_duration': 0.0,
       #           'type': 'regular'
       #         }
       #         startadbreak(logger, segment, monitorinfo, new, adbreak)
@@ -205,15 +228,18 @@ def gothroughsegments(logger, renditionalias, renditionid, monitorinfo:dict, new
       if new:
         # Update new segments duration
         monitorinfo['manifest'][renditionalias]['new']['duration'] = monitorinfo['manifest'][renditionalias]['new']['duration'] + segment['dsec']
+        # Send metric for segment duration
+        utils.addmetric(logger, monitorinfo, 'SegmentDuration', segment['dsec'], 'Seconds', [{'Name': 'Rendition', 'Value': renditionid}])
       # Update last segment
       monitorinfo['manifest'][renditionalias]['last']['segment'] = segment.copy()
       if renditionalias == 'primary':
         # Update content duration since start for tracking playhead
         monitorinfo['manifest']['primary']['contentdurationsincestart'] = monitorinfo['manifest']['primary'].setdefault('contentdurationsincestart', 0) + segment['dsec']
       # Update ad break segments duration
-      if monitorinfo['manifest'][renditionalias]['currentadbreak']:
-        adbreakid = monitorinfo['manifest'][renditionalias]['currentadbreak']['id']
-        monitorinfo['reporting']['adbreaks'][adbreakid]['segmentsduration'] = monitorinfo['reporting']['adbreaks'][adbreakid]['segmentsduration'] + segment['dsec']
+      if renditionalias == 'primary':
+        if monitorinfo['manifest']['primary']['currentadbreak']:
+          adbreakid = monitorinfo['manifest']['primary']['currentadbreak']['id']
+          monitorinfo['adbreaks'][adbreakid]['segments_duration'] = monitorinfo['adbreaks'][adbreakid]['segments_duration'] + segment['dsec']
     if new:
       # Check if found last segment
       monitorinfo['manifest'][renditionalias]['lastsegmentnotfoundcount'] = 0 if monitorinfo['manifest'][renditionalias]['foundlastsegment'] else monitorinfo['manifest'][renditionalias]['lastsegmentnotfoundcount'] + 1
@@ -233,7 +259,7 @@ def gothroughsegments(logger, renditionalias, renditionid, monitorinfo:dict, new
 def monitor(renditionid, url:str, rendition:dict, monitorinfo:dict, primary:bool):
   logging.config.dictConfig(monitorinfo['config']['logging'])
   monitorlogger = logging.getLogger('monitor')
-  logger = getloggeradapterclass(monitorinfo['args'].json_logger)(monitorlogger, {'type': monitorinfo['config']['type'], 'origin': monitorinfo['config']['origin'], 'workload': monitorinfo['config']['workload'], 'endpoint': monitorinfo['config']['endpoint'], 'technology': monitorinfo['config']['technology'], 'rendition': renditionid})
+  logger = getloggeradapterclass(monitorinfo['settings']['application']['json_logger'])(monitorlogger, {'type': monitorinfo['config']['type'], 'origin': monitorinfo['config']['origin'], 'workload': monitorinfo['config']['workload'], 'endpoint': monitorinfo['config']['endpoint'], 'technology': monitorinfo['config']['technology'], 'rendition': renditionid})
   if monitorinfo['config']['endpointconfig']['loglevel'] in utils.loglevels.keys():
     logger.setLevel(utils.loglevels[monitorinfo['config']['endpointconfig']['loglevel']])
   logger.info(f"Started monitoring origin endpoint {url}")
@@ -250,7 +276,7 @@ def monitor(renditionid, url:str, rendition:dict, monitorinfo:dict, primary:bool
       logger.debug(f"Requesting manifest")
       response = utils.request(logger, 'GET', url, 'manifest', renditionid, monitorinfo)
       # Save manifest response
-      if monitorinfo['config']['endpointconfig']['manifests']['save']['local']:
+      if monitorinfo['config']['endpointconfig']['manifests']['save']['local'] or monitorinfo['config']['endpointconfig']['manifests']['save']['s3']:
         utils.saveresponse(logger, response, monitorinfo, 'manifests', "", False, renditionid)
       if monitorinfo['config']['endpointconfig']['validations']['perform']:
         if response:
@@ -261,10 +287,10 @@ def monitor(renditionid, url:str, rendition:dict, monitorinfo:dict, primary:bool
             responselines = utils.decoderesponse(response, True).splitlines()
             getmetadatatags(logger, renditionalias, responselines, monitorinfo)
             if not monitorinfo['manifest'][renditionalias]['last']['segment']:
-              getsegmentinfo(logger, renditionalias, responselines, monitorinfo, True)
+              getsegmentinfo(logger, renditionid, renditionalias, responselines, monitorinfo, True)
               gothroughsegments(logger, renditionalias, renditionid, monitorinfo)
             else:
-              getsegmentinfo(logger, renditionalias, responselines, monitorinfo)
+              getsegmentinfo(logger, renditionid, renditionalias, responselines, monitorinfo)
               gothroughsegments(logger, renditionalias, renditionid, monitorinfo, True)
           monitorinfo['manifest'][renditionalias]['headers']['manifestlastupdated'] = manifestlastupdated
         # Update new duration
@@ -296,13 +322,27 @@ def startthreads(logger, monitorinfo:dict, response):
         attrs = {k.strip(): v.strip().strip('"') for kv in parts if '=' in kv for k, v in [kv.split('=', 1)]}
         if i + 1 < len(lines) and not lines[i + 1].strip().startswith('#'):
           url = urljoin(monitorinfo['config']['endpointconfig']['manifesturl'], lines[i + 1].strip())
-          rendition = {
-            'index': len(renditions['video']) + 1,
-            'media': "video",
-            'bandwidth': int(attrs.get('BANDWIDTH', 0))
-          }
           if url not in renditions['video'].keys():
+            rendition = {
+              'index': len(renditions['video']) + 1,
+              'media': "video",
+              'bandwidth': int(attrs.get('BANDWIDTH', 0)),
+              'averagebandwidth': int(attrs.get('AVERAGE-BANDWIDTH', 0)),
+              'resolution': attrs.get('RESOLUTION', ''),
+              'framerate': float(attrs.get('FRAME-RATE', 0)),
+              'videorange': attrs.get('VIDEO-RANGE', ''),
+              'codecs': attrs.get('CODECS', ''),
+              'audio': attrs.get('AUDIO', ''),
+              'ismonitored': False
+            }
             renditions['video'][url] = rendition
+          else:
+            existing = renditions['video'][url]
+            # Convert to list and append for these fields
+            for field, new_val in [('bandwidth', int(attrs.get('BANDWIDTH', 0))), ('averagebandwidth', int(attrs.get('AVERAGE-BANDWIDTH', 0))), ('codecs', attrs.get('CODECS', '')), ('audio', attrs.get('AUDIO', ''))]:
+              if not isinstance(existing[field], list):
+                existing[field] = [existing[field]]
+              existing[field].append(new_val)
       # Identify audio and subtitles
       elif line.startswith('#EXT-X-MEDIA:'):
         parts = re.split(r',(?=(?:[^"]*"[^"]*")*[^"]*$)', line[len('#EXT-X-MEDIA:'):])
@@ -311,17 +351,40 @@ def startthreads(logger, monitorinfo:dict, response):
         uri = attrs.get('URI', '').strip()
         if media and media in {'audio', 'subtitles', 'video'} and uri:
           url = urljoin(monitorinfo['config']['endpointconfig']['manifesturl'], uri)
-          rendition = {
-            'index': len(renditions[media]) + 1,
-            'media': media
-          }
+          if media == 'video':
+            rendition = {
+              'index': len(renditions[media]) + 1,
+              'media': media,
+              'bandwidth': int(attrs.get('BANDWIDTH', 0)),
+              'averagebandwidth': int(attrs.get('AVERAGE-BANDWIDTH', 0)),
+              'resolution': attrs.get('RESOLUTION', ''),
+              'framerate': float(attrs.get('FRAME-RATE', 0)),
+              'videorange': attrs.get('VIDEO-RANGE', ''),
+              'codecs': attrs.get('CODECS', ''),
+              'audio': attrs.get('AUDIO', ''),
+              'ismonitored': False
+            }
+          else:
+            rendition = {
+              'index': len(renditions[media]) + 1,
+              'media': media,
+              'language': attrs.get('LANGUAGE', ''),
+              'name': attrs.get('NAME', ''),
+              'channels': attrs.get('CHANNELS', ''),
+              'groupid': attrs.get('GROUP-ID', ''),
+              'ismonitored': False
+            }
           if url not in renditions[media].keys():
             renditions[media][url] = rendition
-    logger.debug(f"Found {len(renditions['video'])} video, {len(renditions['audio'])} audio and {len(renditions['subtitles'])} subtitle renditions: {renditions}")
+    logger.info(f"Found {len(renditions['video'])} video, {len(renditions['audio'])} audio and {len(renditions['subtitles'])} subtitles renditions: {renditions}")
+    # Check if required renditions are present
+    for requiredtype in monitorinfo['config']['endpointconfig']['validations']['custom']['required_renditions']:
+      if len(renditions.get(requiredtype, {})) == 0:
+        logger.warning(f"Required rendition '{requiredtype}' not found", extra={'event': 'RENDITION_NOT_FOUND'})
     # Start threads
     primary = True
     activerenditions = []
-    for renditionstring in monitorinfo['config']['endpointconfig']['manifests']['hlsrenditions']:
+    for renditionstring in monitorinfo['config']['endpointconfig']['manifests']['hls_renditions']:
       if renditionstring:
         for media in renditions.keys():
           if media.startswith(renditionstring) or renditionstring == '*':
@@ -331,11 +394,14 @@ def startthreads(logger, monitorinfo:dict, response):
                 activerenditions.append(renditionid)
                 monitorinfo['state']['threads'][renditionid] = threading.Thread(target=monitor, args=(renditionid, url, rendition, monitorinfo, primary))
                 monitorinfo['state']['threads'][renditionid].start()
+                rendition['ismonitored'] = True
                 primary = False
                 if renditionstring != '*':
                   break
     # Update shared object with main process to inform about renditions
-    monitorinfo['config']['sharedwithmain'][(monitorinfo['config']['type'], monitorinfo['config']['technology'], monitorinfo['config']['workload'], monitorinfo['config']['endpoint'], monitorinfo['config']['origin'])] = {'hlsrenditions': activerenditions}
+    monitorinfo['config']['sharedwithmain'][(monitorinfo['config']['type'], monitorinfo['config']['technology'], monitorinfo['config']['workload'], monitorinfo['config']['endpoint'], monitorinfo['config']['origin'], monitorinfo['config']['isdai'])] = {'hls_renditions': activerenditions}
+    # Update renditions for report
+    monitorinfo['manifest']['multi']['renditions'] = renditions
   except Exception as e:
     logger.error(f"Error starting threads. Exception: {str(e)} Traceback: {traceback.format_exc()}", extra={'event': 'INTERNAL_ERROR'})
 
@@ -344,7 +410,7 @@ def startthreads(logger, monitorinfo:dict, response):
 def restartthreads(logger, monitorinfo:dict, response):
   try:
     if monitorinfo['state']['restart'][1]:
-      logger.info(f"Restarting monitoring, reason: {monitorinfo['state']['restart'][1]}")
+      logger.info(f"Restarting monitoring, reason: {monitorinfo['state']['restart'][1]}", extra={'event': 'RENDITION_NOT_FOUND'})
     # Stop HLS monitoring threads
     monitorinfo['state']['stop'].set()
     for thread in monitorinfo['state']['threads'].keys():

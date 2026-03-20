@@ -1,4 +1,6 @@
 from datetime import datetime, timezone
+from loggeradapter import getloggeradapterclass
+import logging.config
 import gzip
 import json
 import pathlib
@@ -15,6 +17,7 @@ import re
 class HTTPNon200Error(Exception):
   pass
 
+
 # Log levels
 loglevels = {
   'debug': logging.DEBUG,
@@ -24,8 +27,10 @@ loglevels = {
   'critical': logging.CRITICAL
 }
 
+
 # Configure HTTP requests
-http = urllib3.PoolManager(num_pools=5, maxsize=5, timeout=3, retries=urllib3.Retry(total=0, redirect=True))
+http = urllib3.PoolManager(num_pools=5, maxsize=5, timeout=3, retries=urllib3.Retry(total=None, connect=0, read=0, redirect=5, status=0, other=0))
+
 
 # SCTE messages
 segmentationmessagemap = {
@@ -66,39 +71,55 @@ def printdictionary(logger, toprint:dict):
 
 
 # Decode base64 or hex SCTE string and return a decoded message
-def decodesctestring(logger, scte:str):
-  logger.debug(f"Decoding SCTE string '{scte}'")
+def decodesctestring(logger, scte:str) -> dict:
   sctemessage = {}
-  try:
-    cue = threefive.Cue(bytes.fromhex(scte[2:])) if scte.startswith('0x') else threefive.Cue(scte)
-    cue.decode()
-    # Splice insert
-    if cue.command.command_type == 5:
-      sctemessage['type'] = 'spliceinsert'
-      if cue.command.out_of_network_indicator:
-        # cue.show()
-        sctemessage['outofnetwork'] = True
-        if cue.command.splice_event_id is not None:
-          sctemessage['spliceeventid'] = int(cue.command.splice_event_id)
-        if cue.command.splice_immediate_flag is not None:
-          sctemessage['spliceimmediate'] = bool(cue.command.splice_immediate_flag)
-        if cue.command.break_duration is not None:
-          sctemessage['duration'] = float(cue.command.break_duration)
-        if cue.command.avail_num is not None:
-          sctemessage['availnum'] = int(cue.command.avail_num)
-    elif cue.command.command_type == 6:
-      sctemessage['type'] = 'timesignal'
-    for descriptor in cue.descriptors:
-      if descriptor.tag == 2:
+  if scte:
+    logger.debug(f"Decoding SCTE string '{scte}'")
+    try:
+      cue = threefive.Cue(bytes.fromhex(scte[2:])) if scte.startswith('0x') else threefive.Cue(scte)
+      cue.decode()
+      # Splice insert
+      if cue.command.command_type == 5:
+        sctemessage['type'] = 'splice_insert'
+        if cue.command.out_of_network_indicator:
+          # cue.show()
+          sctemessage['out_of_network'] = True
+          if cue.command.splice_event_id is not None:
+            sctemessage['splice_event_id'] = int(cue.command.splice_event_id)
+          if cue.command.splice_immediate_flag is not None:
+            sctemessage['splice_immediate'] = bool(cue.command.splice_immediate_flag)
+          if cue.command.break_auto_return is not None:
+            sctemessage['auto_return'] = bool(cue.command.break_auto_return)
+          if cue.command.break_duration is not None:
+            sctemessage['duration'] = float(cue.command.break_duration)
+          if cue.command.avail_num is not None:
+            sctemessage['avail_num'] = int(cue.command.avail_num)
+      elif cue.command.command_type == 6:
+        sctemessage['type'] = 'time_signal'
+      for descriptor in cue.descriptors:
         segmentationdescriptor = {
-          'segmentationtype': round(descriptor.segmentation_type_id, 3),
-          'segmentationmessage': segmentationmessagemap.get(str(descriptor.segmentation_type_id), 'Unknown')
+          'segmentation_type': None
         }
-        if descriptor.segmentation_duration is not None:
-          segmentationdescriptor['duration'] = descriptor.segmentation_duration
+        if descriptor.tag is not None and descriptor.tag == 2:
+          if descriptor.segmentation_type_id is not None:
+            segmentationdescriptor = {
+              'segmentation_type': descriptor.segmentation_type_id,
+              'segmentation_message': segmentationmessagemap.get(str(descriptor.segmentation_type_id), 'Unknown')
+            }
+            if descriptor.segmentation_duration is not None:
+              segmentationdescriptor['duration'] = descriptor.segmentation_duration
+            if descriptor.segmentation_upid_type == 12:
+              try:
+                privatedata = descriptor.segmentation_upid['private_data']
+                if privatedata.startswith('0x'):
+                  privatedata = privatedata[2:]
+                privatedatadecoded = bytes.fromhex(privatedata).decode('utf-8')
+                segmentationdescriptor['upid_private_data'] = f"{privatedatadecoded}"
+              except Exception as e:
+                logger.error(f"Error decoding SCTE UPID private data. Exception: {str(e)} Traceback: {traceback.format_exc()}", extra={'event': 'INTERNAL_ERROR'})
         sctemessage.setdefault('descriptors', []).append(segmentationdescriptor)
-  except Exception as e:
-    logger.error(f"Error decoding SCTE message '{scte}'. Exception: {str(e)} Traceback: {traceback.format_exc()}", extra={'event': 'INTERNAL_ERROR'})
+    except Exception as e:
+      logger.error(f"Error decoding SCTE message '{scte}'. Exception: {str(e)} Traceback: {traceback.format_exc()}", extra={'event': 'INTERNAL_ERROR'})
   return sctemessage
 
 
@@ -134,7 +155,7 @@ def request(logger, method:str, url:str, requesttype:str, rendition:str, monitor
 
 # Add metric to queue
 def addmetric(logger, monitorinfo, metricname:str, metricvalue, metricunit:str, metricdimensions:list):
-  if monitorinfo['config']['endpointconfig']['cwmetrics'] and not monitorinfo['args'].no_aws:
+  if monitorinfo['config']['endpointconfig']['cwmetrics'] and monitorinfo['settings']['aws']['metrics']:
     metricdata = {
       'MetricName': metricname,
       'Value': metricvalue,
@@ -165,12 +186,13 @@ def decoderesponse(response, utf:bool):
 
 
 # Save response to disk or to S3
-def saveresponse(logger, response, monitorinfo:dict, filetypegroup:str, filename:str, binary:bool, rendition:str='multi'):
+def saveresponse(logger, response, monitorinfo:dict, filetypegroup:str, filename:str, binary:bool, rendition:str):
   isgzip = False
   extension = ''
   try:
     if response:
-      timestamp = f"{datetime.now(timezone.utc).strftime('%Y_%m_%d_%H_%M_%S_%f')}"
+      now = datetime.now(timezone.utc)
+      timestamp = f"{now.strftime('%Y_%m_%d_%H_%M_%S_%f')}"
       # Check technology for extension
       if filetypegroup == 'manifests':
         if monitorinfo['config']['technology'] == 'dash':
@@ -183,17 +205,18 @@ def saveresponse(logger, response, monitorinfo:dict, filetypegroup:str, filename
       if 'Content-Encoding' in response.headers:
         if response.headers['Content-Encoding'] == 'gzip':
           isgzip = True
+      # Prepare destination path
+      dst = f"archive/{monitorinfo['config']['type']}/{monitorinfo['config']['workload']}/{monitorinfo['config']['origin']}/{monitorinfo['config']['endpoint']}/{monitorinfo['config']['technology']}/{filetypegroup}/{now.strftime('%Y')}/{now.strftime('%m')}/{now.strftime('%d')}"
+      if monitorinfo['config']['technology'] == 'hls' and filetypegroup == 'manifests' and rendition:
+        dst = f"{dst}/{rendition}"
+      dstpath = pathlib.Path(dst)
       # If local
       if monitorinfo['config']['endpointconfig'][filetypegroup]['save']['local']:
-        if filetypegroup in ['manifests', 'tracking']:
-          folderpath = pathlib.Path('archive', monitorinfo['config']['type'], monitorinfo['config']['workload'], monitorinfo['config']['origin'], monitorinfo['config']['endpoint'], monitorinfo['config']['technology'], filetypegroup, datetime.now(timezone.utc).strftime('%Y-%m-%d'), rendition if monitorinfo['config']['technology'] == 'hls' and filetypegroup == 'manifests' else '')
-        else:
-          folderpath = pathlib.Path('archive', monitorinfo['config']['type'], monitorinfo['config']['workload'], monitorinfo['config']['origin'], monitorinfo['config']['endpoint'], monitorinfo['config']['technology'], filetypegroup)
-        folderpath.mkdir(parents=True, exist_ok=True)
+        dstpath.mkdir(parents=True, exist_ok=True)
         if binary:
           pass
         else:
-          filepath = folderpath / f"{timestamp}{filename}{extension}.gz"
+          filepath = dstpath / f"{timestamp}{filename}{extension}.gz"
           if isgzip:
             with open(filepath, 'wb') as f:
               f.write(response.data)
@@ -201,6 +224,20 @@ def saveresponse(logger, response, monitorinfo:dict, filetypegroup:str, filename
             with gzip.open(filepath, 'wb') as f:
               f.write(response.data)
           logger.debug(f"Saved response to {filepath}")
+      if monitorinfo['config']['endpointconfig'][filetypegroup]['save']['s3']:
+        if binary:
+          pass
+        else:
+          s3_key = f"{dst}/{timestamp}{filename}{extension}.gz"
+          bucket = monitorinfo['settings']['aws']['bucket']
+          # Prepare data for S3 upload
+          if isgzip:
+            body = response.data
+          else:
+            body = gzip.compress(response.data)
+          # Queue S3 upload request (non-blocking)
+          monitorinfo['s3_queue'].put((s3_key, body))
+          logger.debug(f"Queued S3 upload to s3://{bucket}/{s3_key}")
   except Exception as e:
     logger.error(f"Error saving response. Exception: {str(e)} Traceback: {traceback.format_exc()}", extra={'event': 'INTERNAL_ERROR'})
 
@@ -212,6 +249,7 @@ def initializemonitor(monitorinfo:dict, technology:str, renditionalias:str=''):
         'primary': {
           'foundlastsegment': False,
           'lastsegmentnotfoundcount': 0,
+          'currentadbreak': {},
           'headers': {
             'manifestlastupdated': 0,
             'activeinput': None,
@@ -238,7 +276,8 @@ def initializemonitor(monitorinfo:dict, technology:str, renditionalias:str=''):
             'current': {
               'periods': []
             }
-          }
+          },
+          'periods': {}
         }
       }
     })
@@ -281,62 +320,127 @@ def wait(logger, starttime:float, duration:float):
     logger.warning(f"Negative wait time between manifest requests, will back off")
 
 
+def gettrackingevents(logger, ad):
+  try:
+    return [event.get('eventType') for event in ad.get('trackingEvents', [])]
+  except Exception as e:
+    logger.error(f"Encountered error when getting tracking events. Exception: {str(e)} Traceback: {traceback.format_exc()}", extra={'event': 'INTERNAL_ERROR'})
+
+
 # Read tracking response and capture avail information
-def analysetracking(logger, monitorinfo:dict, response, playhead:int):
+def analysetracking(logger, monitorinfo:dict, response, playhead:int, init:bool):
   try:
     if response:
+      # Find new ad breaks and update existing ones
       responsejson = json.loads(decoderesponse(response, True))
       if 'avails' in responsejson:
         for avail in responsejson['avails']:
           availid = avail.get('availId')
-          if availid not in monitorinfo['reporting']['adbreaks']:
+          if availid in monitorinfo['adbreaks'].keys():
+            adbreak = monitorinfo['adbreaks'][availid]
+            # Update tracking events
+            for adbreakad in adbreak['ads']:
+              if avail.get('ads'):
+                for ad in avail['ads']:
+                  if adbreakad['ad_id'] == ad.get('adId'):
+                    new_tracking_events = gettrackingevents(logger, ad)
+                    if adbreakad['tracking_events'] != new_tracking_events:
+                      added = [e for e in new_tracking_events if e not in adbreakad['tracking_events']]
+                      removed = [e for e in adbreakad['tracking_events'] if e not in new_tracking_events]
+                      adbreakad['tracking_events'] = new_tracking_events
+                      logger.info(f"Updated avail id {availid} ad id {adbreakad['ad_id']} tracking events, added: {added}, removed: {removed}")
+                    break
+          else:
             availstarttime = isodate.parse_duration(avail.get('startTime')).total_seconds()
             adbreak = {
               'observed': None,
               'type': 'regular',
-              'playheaddelta': round(availstarttime - playhead, 3),
-              'filledduration': avail.get('durationInSeconds')
+              'avail_id': availid,
+              'start_time_in_seconds': availstarttime,
+              'filled_duration': avail.get('durationInSeconds'),
+              'playhead': playhead,
+              'playhead_delta': round(availstarttime - playhead, 3)
             }
             # Get advertised duration
             if avail.get('adMarkerDuration'):
               admarkderduration = isodate.parse_duration(avail.get('adMarkerDuration')).total_seconds()
               if admarkderduration > 0:
-                adbreak['advertisedduration'] = admarkderduration
-            # Check if this is new ad break
-            adbreakisnew = False
-            if abs(adbreak['playheaddelta']) + adbreak.get('filledduration', 0) + monitorinfo['config']['endpointconfig']['tracking']['frequency'] > 0:
+                adbreak['advertised_duration'] = admarkderduration
+            # Get fill rate
+            if adbreak['filled_duration'] and adbreak.get('advertised_duration'):
+              adbreak['fill_rate'] = round(adbreak['filled_duration'] / adbreak['advertised_duration'], 3)
+            # Get ads
+            adbreak['ads'] = []
+            if avail.get('ads'):
+              for n, ad in enumerate(avail['ads']):
+                # Get ad info
+                adbreak['ads'].append({
+                  'ad_id': ad.get('adId'),
+                  'creative_id': ad.get('creativeId'),
+                  'duration_in_seconds': ad.get('durationInSeconds'),
+                  'tracking_events': gettrackingevents(logger, ad)
+                })
+                # Check first ad to find out if it's overlay
+                if n == 0:
+                  if 'mediaFiles' in ad.keys() and 'mediaFilesList' in ad['mediaFiles'].keys():
+                    for mediafile in ad['mediaFiles']['mediaFilesList']:
+                      if 'mediaType' in mediafile.keys() and mediafile['mediaType'] == 'null/null':
+                        adbreak['type'] = 'overlay'
+                        break
+            # Update observed time
+            if not init:
               adbreak['observed'] = f"{datetime.now(timezone.utc)}"
-              adbreakisnew = True
-            # Get fillrate
-            if adbreak.get('filledduration') and adbreak.get('advertisedduration'):
-              adbreak['fillrate'] = round(adbreak['filledduration']/adbreak['advertisedduration'], 3)
-            # Check if ad break is overlay
-            if avail.get('ads') and avail['ads']:
-              ad = avail['ads'][0]
-              if 'mediaFiles' in ad.keys() and 'mediaFilesList' in ad['mediaFiles'].keys():
-                for mediafile in ad['mediaFiles']['mediaFilesList']:
-                  if 'mediaType' in mediafile.keys() and mediafile['mediaType'] == 'null/null':
-                    adbreak['type'] = 'overlay'
-                    break
-            # Check ad break duration
-            if not adbreak.get('advertisedduration') and monitorinfo['config']['endpointconfig']['validations']['custom']['checkadbreakscteduration']:
-              logger.warning(f"Ad break has no duration", extra={'event': 'AD_BREAK_DURATION_NOT_FOUND'})
-            # Update reporting with ad break info
-            monitorinfo['reporting']['adbreaks'][availid] = adbreak
-            # Send metrics
-            if adbreakisnew:
+            # Log ad break
+            summary = {k: adbreak[k] for k in ['type', 'start_time_in_seconds', 'filled_duration', 'fill_rate', 'playhead', 'playhead_delta'] if k in adbreak}
+            if 'ads' in adbreak:
+              summary['ads'] = len(adbreak['ads'])
+            logger.info(f"Found {'new ' if not init else ''}avail id {availid} in tracking data: {json.dumps(summary)}")
+            # Warn if ad break has no duration
+            if not adbreak.get('advertised_duration') and monitorinfo['config']['endpointconfig']['validations']['custom']['check_ad_break_scte_duration']:
+              logger.warning(f"Avail id {availid} has no duration", extra={'event': 'AD_BREAK_DURATION_NOT_FOUND'})
+            # If this is new ad break
+            if not init:
+              # Compare ad break start time and playhead
+              if monitorinfo['config']['endpointconfig']['validations']['custom']['check_ad_break_start_time']:
+                if adbreak['playhead_delta'] + monitorinfo['config']['endpointconfig']['tracking']['frequency'] < 0:
+                  logger.warning(f"Avail id {availid} has start time {adbreak['playhead_delta']} s in the past from current playhead", extra={'event': 'AD_BREAK_START_TIME_IN_PAST'})
+              # Send metrics
               addmetric(logger, monitorinfo, 'Start', 1, 'Count', [{'Name': 'AdBreakType', 'Value': adbreak['type']}])
-              if adbreak.get('advertisedduration'):
-                addmetric(logger, monitorinfo, 'AdvertisedDuration', adbreak['advertisedduration'], 'Seconds', [{'Name': 'AdBreakType', 'Value': adbreak['type']}])
-              if adbreak.get('fillrate'):
-                addmetric(logger, monitorinfo, 'FillRate', adbreak['fillrate'], 'None', [{'Name': 'AdBreakType', 'Value': adbreak['type']}])
+              if adbreak.get('advertised_duration'):
+                addmetric(logger, monitorinfo, 'AdvertisedDuration', adbreak['advertised_duration'], 'Seconds', [{'Name': 'AdBreakType', 'Value': adbreak['type']}])
+              if adbreak.get('fill_rate'):
+                addmetric(logger, monitorinfo, 'FillRate', adbreak['fill_rate'], 'None', [{'Name': 'AdBreakType', 'Value': adbreak['type']}])
+            # Update adbreaks
+            monitorinfo['adbreaks'][availid] = adbreak
+    # Go through ad breaks and validate the ones that completed
+    for availid in monitorinfo['adbreaks'].keys():
+      adbreak = monitorinfo['adbreaks'][availid]
+      if not adbreak.get('ad_break_is_over'):
+        # Check if ad break is over
+        if adbreak['observed']:
+          adbreakobserved = datetime.fromisoformat(adbreak['observed'])
+          if (datetime.now(timezone.utc) - adbreakobserved).total_seconds() > adbreak.get('filled_duration', 0):
+            adbreak['ad_break_is_over'] = True
+            # Check for required tracking events
+            required_events = set(monitorinfo['config']['endpointconfig']['validations']['custom']['required_tracking_events'])
+            for adbreakad in adbreak['ads']:
+              if required_events and not required_events.issubset(adbreakad['tracking_events']):
+                logger.warning(f"Avail id {availid} ad id {adbreakad['ad_id']} has missing required tracking events: {required_events - set(adbreakad['tracking_events'])}", extra={'event': 'MISSING_REQUIRED_TRACKING_EVENTS'})
+            logger.info(f"Completed avail id {availid} validations at ad break end")
   except Exception as e:
-    logger.error(f"Encountered error when analysing tracking. Exception: {str(e)} Traceback: {traceback.format_exc()}", extra={'event': 'INTERNAL_ERROR'})
+    logger.error(f"Encountered error when analysing tracking data. Exception: {str(e)} Traceback: {traceback.format_exc()}", extra={'event': 'INTERNAL_ERROR'})
 
 
 # Get tracking response
 def tracking(logger, monitorinfo:dict, endpointconfig:dict):
+  logging.config.dictConfig(monitorinfo['config']['logging'])
+  monitorlogger = logging.getLogger('monitor')
+  logger = getloggeradapterclass(monitorinfo['settings']['application']['json_logger'])(monitorlogger, {'type': monitorinfo['config']['type'], 'origin': monitorinfo['config']['origin'], 'workload': monitorinfo['config']['workload'], 'endpoint': monitorinfo['config']['endpoint'], 'technology': monitorinfo['config']['technology'], 'rendition': 'tracking'})
+  if monitorinfo['config']['endpointconfig']['loglevel'] in loglevels.keys():
+    logger.setLevel(loglevels[monitorinfo['config']['endpointconfig']['loglevel']])
+  logger.info(f"Started monitoring tracking endpoint {endpointconfig['trackingurl']}")
   try:
+    init = True
     while not monitorinfo['state']['stop'].is_set():
       starttime = time.perf_counter()
       if endpointconfig['tracking']['get']:
@@ -352,7 +456,7 @@ def tracking(logger, monitorinfo:dict, endpointconfig:dict):
         # Update tracking url
         if endpointconfig['tracking']['playhead']:
           if playhead:
-            trackingurl = f"{trackingurl}?aws.playheadPositionInSeconds={playhead - endpointconfig['tracking']['playheaddelay']}"
+            trackingurl = f"{trackingurl}?aws.playheadPositionInSeconds={playhead - endpointconfig['tracking']['playhead_delay']}"
           else:
             trackingurl = None
             logger.debug(f"Waiting for manifest content to calculate tracking playhead")
@@ -362,10 +466,11 @@ def tracking(logger, monitorinfo:dict, endpointconfig:dict):
           response = request(logger, 'GET', trackingurl, 'tracking', '', monitorinfo)
           # Analyse tracking
           if playhead:
-            analysetracking(logger, monitorinfo, response, playhead)
+            analysetracking(logger, monitorinfo, response, playhead, init)
+            init = False
           # Save tracking
-          if endpointconfig['tracking']['save']['local']:
-            saveresponse(logger, response, monitorinfo, 'tracking', f"_playhead_{playhead - endpointconfig['tracking']['playheaddelay']}" if endpointconfig['tracking']['playhead'] else "", False)
+          if endpointconfig['tracking']['save']['local'] or endpointconfig['tracking']['save']['s3']:
+            saveresponse(logger, response, monitorinfo, 'tracking', f"_playhead_{playhead - endpointconfig['tracking']['playhead_delay']}" if endpointconfig['tracking']['playhead'] else "", False, '')
       wait(logger, starttime, endpointconfig['tracking']['frequency'])
   except Exception as e:
     logger.error(f"Encountered error in tracking thread. Exception: {str(e)} Traceback: {traceback.format_exc()}", extra={'event': 'INTERNAL_ERROR'})
@@ -374,18 +479,20 @@ def tracking(logger, monitorinfo:dict, endpointconfig:dict):
 
 
 def checkforstaleness(logger, monitorinfo:dict, requesttime, renditionalias, renditionid):
-  durationsum = 0
+  durationsum = 0.0
   todelete = []
   try:
-    bufferlength = len(monitorinfo['manifest'][renditionalias]['buffer']['window'])
     for timestamp, duration in monitorinfo['manifest'][renditionalias]['buffer']['window'].items():
       if timestamp > requesttime - monitorinfo['manifest'][renditionalias]['buffer']['size']:
         durationsum = durationsum + duration
       else:
         todelete.append(timestamp)
+    durationsum = round(durationsum, 1)
     for timestamp in todelete:
       del monitorinfo['manifest'][renditionalias]['buffer']['window'][timestamp]
-    addmetric(logger, monitorinfo, 'BufferFillDuration', durationsum, 'Seconds', [{'Name': 'Rendition', 'Value': renditionid}])
+    # Send buffer metric
+    dimensions = [{'Name': 'Rendition', 'Value': renditionid}] if monitorinfo['config']['technology'] == 'hls' else []
+    addmetric(logger, monitorinfo, 'BufferFillDuration', durationsum, 'Seconds', dimensions)
     if durationsum == 0:
       logger.warning(f"Stale manifest", extra={'event': 'STALE_MANIFEST'})
   except Exception as e:
@@ -420,53 +527,51 @@ def checkresponseheaders(logger, monitorinfo, response, renditionalias='primary'
 # Calculate ad break duration delta
 def updateadbreakdurationdelta(logger, monitorinfo, adbreakid, new):
   try:
-    monitorinfo['reporting']['adbreaks'][adbreakid]['segmentsduration'] = round(monitorinfo['reporting']['adbreaks'][adbreakid]['segmentsduration'], 3)
-    if monitorinfo['reporting']['adbreaks'][adbreakid]['advertisedduration'] is not None and monitorinfo['reporting']['adbreaks'][adbreakid]['advertisedduration'] > 0:
-      monitorinfo['reporting']['adbreaks'][adbreakid]['durationdelta'] = round(monitorinfo['reporting']['adbreaks'][adbreakid]['segmentsduration'] - monitorinfo['reporting']['adbreaks'][adbreakid]['advertisedduration'], 3)
+    monitorinfo['adbreaks'][adbreakid]['segments_duration'] = round(monitorinfo['adbreaks'][adbreakid]['segments_duration'], 3)
+    if monitorinfo['adbreaks'][adbreakid]['advertised_duration'] is not None and monitorinfo['adbreaks'][adbreakid]['advertised_duration'] > 0:
+      monitorinfo['adbreaks'][adbreakid]['duration_delta'] = round(monitorinfo['adbreaks'][adbreakid]['segments_duration'] - monitorinfo['adbreaks'][adbreakid]['advertised_duration'], 3)
       if new:
-        addmetric(logger, monitorinfo, 'DurationDelta', abs(monitorinfo['reporting']['adbreaks'][adbreakid]['durationdelta']), 'Seconds', [{'Name': 'AdBreakType', 'Value': monitorinfo['reporting']['adbreaks'][adbreakid]['type']}])
-        if abs(monitorinfo['reporting']['adbreaks'][adbreakid]['durationdelta']) > monitorinfo['config']['endpointconfig']['validations']['custom']['maxadbreakdurationdelta']:
-          logger.warning(f"Ad break duration was {'longer' if monitorinfo['reporting']['adbreaks'][adbreakid]['durationdelta'] > 0 else 'shorter'} than advertised by {abs(monitorinfo['reporting']['adbreaks'][adbreakid]['durationdelta'])} seconds", extra={'event': 'AD_BREAK_DURATION_DELTA_BREACHED'})
+        addmetric(logger, monitorinfo, 'DurationDelta', abs(monitorinfo['adbreaks'][adbreakid]['duration_delta']), 'Seconds', [{'Name': 'AdBreakType', 'Value': monitorinfo['adbreaks'][adbreakid]['type']}])
+        if abs(monitorinfo['adbreaks'][adbreakid]['duration_delta']) > monitorinfo['config']['endpointconfig']['validations']['custom']['max_ad_break_duration_delta']:
+          logger.warning(f"Ad break duration was {'longer' if monitorinfo['adbreaks'][adbreakid]['duration_delta'] > 0 else 'shorter'} than advertised by {abs(monitorinfo['adbreaks'][adbreakid]['duration_delta'])} seconds", extra={'event': 'AD_BREAK_DURATION_DELTA_BREACHED'})
   except Exception as e:
     logger.error(f"Error while getting ad break duration delta. Exception: {str(e)} Traceback: {traceback.format_exc()}", extra={'event': 'INTERNAL_ERROR'})
 
 
 # Respond with true if SCTE signal is one of ad break opportunity signals provided in the config file
-def checkifadbreak(logger, monitorinfo:dict, adbreak:dict):
-  adbreak.update({
-    'isopportunity': False,
+def checkifadbreak(logger, monitorinfo:dict, event:dict):
+  event.update({
+    'is_opportunity': False,
     'type': 'regular'
   })
   try:
     # Check if SCTE message contains multiple descriptors
-    if 'descriptors' in adbreak['sctemessage']['decoded'].keys():
-      if len(adbreak['sctemessage']['decoded']['descriptors']) > 1:
-        logger.warning(f"SCTE message contains multiple ({len(adbreak['sctemessage']['decoded']['descriptors'])}) segmentation descriptors: {adbreak['sctemessage']['decoded']['descriptors']}", extra={'event': 'MULTIPLE_SEGMENTATION_DESCRIPTORS'})
-    for adbreaksignal in monitorinfo['config']['endpointconfig']['validations']['custom']['adbreaksctesignals']:
-      if not adbreak['isopportunity']:
+    if 'descriptors' in event['scte_message']['decoded'].keys():
+      if len(event['scte_message']['decoded']['descriptors']) > 1:
+        logger.warning(f"SCTE message contains multiple ({len(event['scte_message']['decoded']['descriptors'])}) segmentation descriptors: {event['scte_message']['decoded']['descriptors']}", extra={'event': 'MULTIPLE_SEGMENTATION_DESCRIPTORS'})
+    for adbreaksignal in monitorinfo['config']['endpointconfig']['validations']['custom']['ad_break_scte_signals']:
+      if not event['is_opportunity']:
         # Check for segmentation descriptors
         if isinstance(adbreaksignal, int) or adbreaksignal.isdigit():
           adbreaksignal = int(adbreaksignal)
-          if 'descriptors' in adbreak['sctemessage']['decoded'].keys():
-            for descriptor in adbreak['sctemessage']['decoded']['descriptors']:
-              if 'segmentationtype' in descriptor.keys():
-                if descriptor['segmentationtype'] == adbreaksignal:
-                  adbreak['isopportunity'] = True
-                  if descriptor['segmentationtype'] == 56:
-                    adbreak['type'] = 'overlay'
+          if 'descriptors' in event['scte_message']['decoded'].keys():
+            for descriptor in event['scte_message']['decoded']['descriptors']:
+              if 'segmentation_type' in descriptor.keys():
+                if descriptor['segmentation_type'] == adbreaksignal:
+                  event['is_opportunity'] = True
+                  if descriptor['segmentation_type'] == 56:
+                    event['type'] = 'overlay'
                   break
-        elif adbreaksignal == 'spliceinsert':
+        elif adbreaksignal == 'splice_insert':
           # Check if splice insert
-          if 'type' in adbreak['sctemessage']['decoded'].keys() and adbreak['sctemessage']['decoded']['type'] == 'spliceinsert':
-            if adbreak['sctemessage']['decoded'].get('outofnetwork'):
-              adbreak['isopportunity'] = True
-              if 'descriptors' in adbreak['sctemessage']['decoded'].keys():
-                for descriptor in adbreak['sctemessage']['decoded']['descriptors']:
-                  if 'segmentationtype' in descriptor.keys():
-                    if descriptor['segmentationtype'] == 56:
-                      adbreak['type'] = 'overlay'
+          if 'type' in event['scte_message']['decoded'].keys() and event['scte_message']['decoded']['type'] == 'splice_insert':
+            if event['scte_message']['decoded'].get('out_of_network'):
+              event['is_opportunity'] = True
+              if 'descriptors' in event['scte_message']['decoded'].keys():
+                for descriptor in event['scte_message']['decoded']['descriptors']:
+                  if 'segmentation_type' in descriptor.keys():
+                    if descriptor['segmentation_type'] == 56:
+                      event['type'] = 'overlay'
                       break
-    if not adbreak['isopportunity']:
-      logger.warning(f"Found SCTE message that is not among provided ad break opportunity signals in config file: {adbreak['sctemessage']}", extra={'event': 'UNEXPECTED_AD_BREAK_SCTE_SIGNAL'})
   except Exception as e:
     logger.error(f"Error while checking if SCTE35 signal is ad break opportunity. Exception: {str(e)} Traceback: {traceback.format_exc()}", extra={'event': 'INTERNAL_ERROR'})

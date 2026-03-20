@@ -1,6 +1,6 @@
 {
-  "x": {{positions[0]}},
-  "y": {{positions[1]}},
+  "x": 0,
+  "y": 0,
   "height": {{dashboardconfig['metric']['height']}},
   "width": {{dashboardconfig['metric']['width']}},
   "type": "metric",
@@ -13,7 +13,7 @@
             {% if ns.count > 0 %}, {% endif %}[ "CanaryMonitor", "Discontinuity", "Origin", "{{renderinfo['origin']}}", "Type", "{{renderinfo['type']}}", "Endpoint", "{{endpoint['endpoint']}}", "Technology", "{{endpoint['technology']}}", "Rendition", "{{rendition}}", "Workload", "{{renderinfo['workload']}}"]{% set ns.count = ns.count + 1 %}
           {% endfor %}
         {% elif endpoint['technology'] == 'dash' %}
-          {% if ns.count > 0 %}, {% endif %}[ "CanaryMonitor", "Discontinuity", "Origin", "{{renderinfo['origin']}}", "Type", "{{renderinfo['type']}}", "Endpoint", "{{endpoint['endpoint']}}", "Technology", "{{endpoint['technology']}}", "Rendition", "multi", "Workload", "{{renderinfo['workload']}}"]{% set ns.count = ns.count + 1 %}
+          {% if ns.count > 0 %}, {% endif %}[ "CanaryMonitor", "Discontinuity", "Origin", "{{renderinfo['origin']}}", "Type", "{{renderinfo['type']}}", "Endpoint", "{{endpoint['endpoint']}}", "Technology", "{{endpoint['technology']}}", "Workload", "{{renderinfo['workload']}}"]{% set ns.count = ns.count + 1 %}
         {% endif %}
       {% endfor %}
     ],

@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-import argparse
 import logging
 import logging.config
 import multiprocessing
@@ -9,6 +8,7 @@ import time
 import re
 import sys
 import json
+import yaml
 import copy
 import os
 import pathlib
@@ -22,58 +22,12 @@ from queue import Queue
 import utils
 import dash
 import hls
+import socket
+import urllib3
+
 
 # Allow logging extra values
-class JsonLoggerAdapter(logging.LoggerAdapter):
-  def process(self, msg, kwargs):
-    if 'extra' in kwargs:
-      kwargs['extra'].update(self.extra)
-    else:
-      kwargs['extra'] = self.extra
-    return msg, kwargs
-
-# Determine which LoggerAdapter to use based on argument and library availability
-def getloggeradapterclass(use_json_logger):
-  if use_json_logger:
-    try:
-      import pythonjsonlogger
-      return JsonLoggerAdapter
-    except ImportError:
-      pass
-  return logging.LoggerAdapter
-
-# Initialize widget positions when rendering dashboard
-def initpositions():
-  dashboardconfig['x'] = 0
-  dashboardconfig['y'] = 0
-  dashboardconfig['ymax'] = 0
-  return [0, 0]
-
-
-# Calculate new widget positions when rendering dashboard
-def getpositions(widgettype:str):
-  x = 0
-  y = dashboardconfig['ymax']
-  if widgettype == 'header':
-    dashboardconfig['x'] = dashboardconfig['maxwidth']
-    dashboardconfig['y'] = dashboardconfig['ymax']
-    dashboardconfig['ymax'] = dashboardconfig['ymax'] + dashboardconfig['header']['height']
-  elif widgettype == 'metric':
-    # New row
-    if dashboardconfig['x'] + dashboardconfig['metric']['width'] > dashboardconfig['maxwidth']:
-      dashboardconfig['x'] = dashboardconfig['metric']['width']
-      dashboardconfig['y'] = dashboardconfig['ymax']
-      dashboardconfig['ymax'] = dashboardconfig['ymax'] + dashboardconfig['metric']['height']
-    # Same row
-    else:
-      x = dashboardconfig['x']
-      y = dashboardconfig['y']
-      dashboardconfig['x'] = dashboardconfig['x'] + dashboardconfig['metric']['width']
-  elif widgettype == 'loginsights':
-    dashboardconfig['x'] = dashboardconfig['maxwidth']
-    dashboardconfig['y'] = dashboardconfig['ymax']
-    dashboardconfig['ymax'] = dashboardconfig['ymax'] + dashboardconfig['loginsights']['height']
-  return [x, y]
+from loggeradapter import getloggeradapterclass
 
 
 # Update default endpointconfig with user provided settings
@@ -87,39 +41,51 @@ def endpointconfigupdate(endpointconfig, userconfig):
 
 # Read endpoint information from CSV file content into endpoints dictionary
 def readcsvfile(filename, content, endpoints:dict):
+  mainlogger.info(f"Ingesting endpoints from CSV file {filename}")
   try:
     lines = content.splitlines()
     for index, line in enumerate(lines, 1):
       if line.strip() and not line.startswith('#'):
         splitline = re.split(f',', line)
-        if len(splitline) >= 7:
+        if len(splitline) >= 8:
           validentry = True
           for value in splitline:
             if not value.strip():
-              mainlogger.warning(f"Invalid empty value in CSV file {filename} on line {index}: {line.strip()}")
+              mainlogger.warning(f"Found empty value in {filename} file on line {index}: {line.strip()}")
               validentry = False
               break
           if validentry:
-            endpointconfig = copy.deepcopy(defaultendpointconfig)
-            identifier = (splitline[0].strip().lower(), splitline[1].strip().lower(), splitline[2].strip(), splitline[3].strip(), splitline[4].strip().lower()) # endpoint type, technology, workload name, endpoint name, origin name
+            # Get identifier
+            identifier = (splitline[0].strip().lower(), splitline[1].strip().lower(), splitline[2].strip(), splitline[3].strip(), splitline[4].strip(), splitline[5].strip().lower() == 'true') # endpoint type, technology, workload name, endpoint name, origin name, is dai
             # Get endpoint configuration
-            if splitline[5].strip() not in mainconfig['hashtable']['config'].keys():
-              gethash('config', splitline[5].strip(), True)
+            endpointconfig = copy.deepcopy(defaultendpointconfig)
+            configname = splitline[6].strip()
+            configpath = f"configs/{configname}"
             try:
-              if pathlib.Path(splitline[5].strip()).is_file():
-                with open(splitline[5].strip(), 'r') as file:
-                  endpointconfigupdate(endpointconfig, json.load(file))
-                  # endpointconfig.update(json.load(file))
+              if configpath in mainconfig['configcache']:
+                endpointconfigupdate(endpointconfig, mainconfig['configcache'][configpath])
               else:
-                mainlogger.warning(f"Failed inputting endpoint on line {index} from {filename} because config file {splitline[5].strip()} does not exist")
-                continue
+                if settings['application']['input_location'] == 's3':
+                  if configpath not in mainconfig['hashtable']['config'].keys():
+                    response = s3.head_object(Bucket=settings['aws']['bucket'], Key=configpath)
+                    mainconfig['hashtable']['config'][configpath] = response['ETag'].strip('"')
+                  configdata = s3.get_object(Bucket=settings['aws']['bucket'], Key=configpath)['Body'].read().decode('utf-8')
+                  mainconfig['configcache'][configpath] = json.loads(configdata)
+                else:
+                  if configpath not in mainconfig['hashtable']['config'].keys():
+                    gethash('config', configpath, True)
+                  with open(configpath, 'r') as file:
+                    mainconfig['configcache'][configpath] = json.load(file)
+                endpointconfigupdate(endpointconfig, mainconfig['configcache'][configpath])
             except json.decoder.JSONDecodeError as e:
-              mainlogger.error(f"Error parsing config file {splitline[5].strip()}. Will use default settings. Exception: {e} Traceback: {traceback.format_exc()}")
+              mainlogger.warning(f"Failed parsing config file {configpath}. Will use default settings. Exception: {e} Traceback: {traceback.format_exc()}")
+            except Exception as e:
+              mainlogger.warning(f"Failed reading config file {configpath}. Will use default settings. Exception: {e} Traceback: {traceback.format_exc()}")
             # Get manifest url
-            endpointconfig['manifesturl'] = splitline[6].strip()
+            endpointconfig['manifesturl'] = splitline[7].strip()
             # Get tracking url
-            if len(splitline) >= 8:
-              endpointconfig['trackingurl'] = splitline[7].strip()
+            if len(splitline) >= 9:
+              endpointconfig['trackingurl'] = splitline[8].strip()
             # Update endpoints with origin endpoint information
             if identifier in endpoints.keys():
               mainlogger.warning(f"Duplicate origin endpoint in CSV file {filename} on line {index}: {line.strip()}")
@@ -142,10 +108,21 @@ def getendpointsinfo():
   # Collect origin endpoints information
   mainlogger.info(f"Collecting origin endpoint information")
   try:
-    for csvfile in localinputsfolderpath.rglob('*.csv'):
-      gethash('input', str(csvfile), True)
-      with open(csvfile, 'r') as file:
-        readcsvfile(str(csvfile), file.read(), endpoints)
+    if settings['application']['input_location'] == 's3':
+      response = s3.list_objects_v2(Bucket=settings['aws']['bucket'], Prefix='origins/')
+      if 'Contents' in response:
+        for obj in response['Contents']:
+          if obj['Key'].endswith('.csv'):
+            mainconfig['hashtable']['input'][obj['Key']] = obj['ETag'].strip('"')
+            csvdata = s3.get_object(Bucket=settings['aws']['bucket'], Key=obj['Key'])['Body'].read().decode('utf-8')
+            readcsvfile(obj['Key'], csvdata, endpoints)
+    elif settings['application']['input_location'] == 'local':
+      for csvfile in localinputsfolderpath.rglob('*.csv'):
+        gethash('input', str(csvfile), True)
+        with open(csvfile, 'r') as file:
+          readcsvfile(str(csvfile), file.read(), endpoints)
+    else:
+      mainlogger.warning(f"Unsupported input location: {settings['application']['input_location']}")
   except Exception as e:
     mainlogger.error(f"Failed to get origin endpoints information. Exception: {e} Traceback: {traceback.format_exc()}")
   return endpoints
@@ -166,22 +143,48 @@ def gethash(category:str, filename:str, update:bool):
 # Find new, deleted, updated input files and modified config files
 def checkforinputorconfigchanges():
   changes = []
-  # New inputs
-  for csvfile in localinputsfolderpath.rglob('*.csv'):
-    if str(csvfile) not in mainconfig['hashtable']['input'].keys():
-      changes.append({'change': 'new', 'category': 'input', 'filename': str(csvfile)})
-  # Deleted or updated input
-  for inputfile in mainconfig['hashtable']['input'].keys():
-    if pathlib.Path(inputfile).is_file():
-      if mainconfig['hashtable']['input'][inputfile] != gethash('input', inputfile, False):
-        changes.append({'change': 'updated', 'category': 'input', 'filename': inputfile})
-    else:
-      changes.append({'change': 'deleted', 'category': 'input', 'filename': inputfile})
-  # Modified config
-  for configfile in mainconfig['hashtable']['config'].keys():
-    if pathlib.Path(configfile).is_file():
-      if mainconfig['hashtable']['config'][configfile] != gethash('config', configfile, False):
-        changes.append({'change': 'updated', 'category': 'config', 'filename': configfile})
+  try:
+    if settings['application']['input_location'] == 's3':
+      # New or updated inputs from S3
+      response = s3.list_objects_v2(Bucket=settings['aws']['bucket'], Prefix='origins/')
+      current_s3_files = {}
+      if 'Contents' in response:
+        for obj in response['Contents']:
+          if obj['Key'].endswith('.csv'):
+            current_etag = obj['ETag'].strip('"')
+            current_s3_files[obj['Key']] = current_etag
+            if obj['Key'] not in mainconfig['hashtable']['input']:
+              changes.append({'change': 'new', 'category': 'input', 'filename': obj['Key']})
+            elif mainconfig['hashtable']['input'][obj['Key']] != current_etag:
+              changes.append({'change': 'updated', 'category': 'input', 'filename': obj['Key']})
+      # Deleted inputs from S3
+      for inputfile in list(mainconfig['hashtable']['input'].keys()):
+        if inputfile not in current_s3_files:
+          changes.append({'change': 'deleted', 'category': 'input', 'filename': inputfile})
+    elif settings['application']['input_location'] == 'local':
+      # New inputs
+      for csvfile in localinputsfolderpath.rglob('*.csv'):
+        if str(csvfile) not in mainconfig['hashtable']['input'].keys():
+          changes.append({'change': 'new', 'category': 'input', 'filename': str(csvfile)})
+      # Deleted or updated input
+      for inputfile in mainconfig['hashtable']['input'].keys():
+        if pathlib.Path(inputfile).is_file():
+          if mainconfig['hashtable']['input'][inputfile] != gethash('input', inputfile, False):
+            changes.append({'change': 'updated', 'category': 'input', 'filename': inputfile})
+        else:
+          changes.append({'change': 'deleted', 'category': 'input', 'filename': inputfile})
+    # Modified config
+    for configpath in mainconfig['hashtable']['config'].keys():
+      if settings['application']['input_location'] == 's3':
+        response = s3.head_object(Bucket=settings['aws']['bucket'], Key=configpath)
+        current_etag = response['ETag'].strip('"')
+        if mainconfig['hashtable']['config'][configpath] != current_etag:
+          changes.append({'change': 'updated', 'category': 'config', 'filename': configpath})
+      elif pathlib.Path(configpath).is_file():
+        if mainconfig['hashtable']['config'][configpath] != gethash('config', configpath, False):
+          changes.append({'change': 'updated', 'category': 'config', 'filename': configpath})
+  except Exception as e:
+    mainlogger.error(f"Error checking for changes. Hashtable: {mainconfig['hashtable']} Exception: {str(e)} Traceback: {traceback.format_exc()}", extra={'event': 'INTERNAL_ERROR'})
   return changes
 
 
@@ -189,20 +192,28 @@ def checkforinputorconfigchanges():
 def savereport(logger, monitorinfo, final:bool):
   try:
     monitorinfo['reporting']['filepath'].parent.mkdir(parents=True, exist_ok=True)
-    monitorinfo['reporting']['report'][f"{monitorinfo['state']['starttimeepoch']}"] = {
-      'starttime': f"{monitorinfo['state']['startdatetime']}",
-      'endtime': f"{datetime.now(timezone.utc)}" if final else None,
-      'runtime': int(time.perf_counter() - monitorinfo['state']['starttimeperf']),
-      'adbreaks': monitorinfo['reporting']['adbreaks']
+    starttimeepochstr = f"{monitorinfo['state']['starttimeepoch']}"
+    monitorinfo['reporting']['report'][starttimeepochstr] = {
+      'manifest_url': f"{monitorinfo['config']['endpointconfig']['manifesturl']}",
+      'start_time': f"{monitorinfo['state']['startdatetime']}",
+      'end_time': f"{datetime.now(timezone.utc)}" if final else None
     }
+    if monitorinfo['config']['technology'] == 'dash':
+      monitorinfo['reporting']['report'][starttimeepochstr]['periods'] = monitorinfo['manifest']['primary']['periods'],
+    elif monitorinfo['config']['technology'] == 'hls':
+      monitorinfo['reporting']['report'][starttimeepochstr]['renditions'] = monitorinfo['manifest']['multi']['renditions']
+      monitorinfo['reporting']['report'][starttimeepochstr]['ad_breaks'] = monitorinfo['adbreaks']
     with open(monitorinfo['reporting']['filepath'], 'w') as file:
       json.dump(monitorinfo['reporting']['report'], file, indent=2)
       logger.debug(f"Saved report to {monitorinfo['reporting']['filepath']}")
-    if monitorinfo['config']['endpointconfig']['reports']['save']['s3'] and args.bucket:
-      s3.put_object(Bucket=args.bucket, Key=str(monitorinfo['reporting']['filepath']), Body=json.dumps(monitorinfo['reporting']['report'], indent=2), ContentType='application/json')
-      logger.debug(f"Saved report to s3://{args.bucket}/{str(monitorinfo['reporting']['filepath'])}")
+    if monitorinfo['config']['endpointconfig']['reports']['save']['s3']:
+      bucket = monitorinfo['settings']['aws']['bucket']
+      key = str(monitorinfo['reporting']['filepath'])
+      body = json.dumps(monitorinfo['reporting']['report'], indent=2)
+      monitorinfo['s3_queue'].put((key, body))
+      logger.debug(f"Queued S3 report upload: s3://{bucket}/{key}")
   except Exception as e:
-    logger.error(f"Error saving report. Exception: {str(e)} Traceback: {traceback.format_exc()}")
+    logger.error(f"Error saving report. Exception: {str(e)} Traceback: {traceback.format_exc()}", extra={'event': 'INTERNAL_ERROR'})
 
 
 # Publish metrics to CW
@@ -217,7 +228,7 @@ def publishmetrics(logger, monitorinfo):
       cloudwatch.put_metric_data(Namespace='CanaryMonitor', MetricData=metricstopublish)
       logger.debug(f"Published {len(metricstopublish)} metrics to CloudWatch")
   except Exception as e:
-    logger.error(f"Error publishing metrics. Exception: {str(e)}")
+    logger.error(f"Error publishing metrics. Exception: {str(e)}", extra={'event': 'INTERNAL_ERROR'})
 
 
 # Update worker settings
@@ -231,19 +242,21 @@ def updateendpointconfig(logger, endpointinfofile:str, endpointidentifier:tuple,
     if endpointconfig['loglevel'] in utils.loglevels.keys():
       logger.setLevel(utils.loglevels[endpointconfig['loglevel']])
   except Exception as e:
-    logger.error(f"Error updating worker endpoint configuration. Exception: {str(e)} Traceback: {traceback.format_exc()}")
+    logger.error(f"Error updating worker endpoint configuration. Exception: {str(e)} Traceback: {traceback.format_exc()}", extra={'event': 'INTERNAL_ERROR'})
 
 
 # Monitor endpoint
-def monitor(endpointidentifier:tuple, endpointconfig:dict, stopflag, changeflag, endpointinfofile, sharedwithmain, loggingconfig:dict, args):
+def monitor(endpointidentifier:tuple, endpointconfig:dict, stopflag, changeflag, endpointinfofile, sharedwithmain, loggingconfig:dict, settings, s3_queue):
   monitorinfo = {
-    'args': args,
+    'settings': settings,
+    's3_queue': s3_queue,
     'config': {
       'type': endpointidentifier[0],
       'technology': endpointidentifier[1],
       'workload': endpointidentifier[2],
       'endpoint': endpointidentifier[3],
       'origin': endpointidentifier[4],
+      'isdai': endpointidentifier[5],
       'endpointconfig': endpointconfig,
       'logging': loggingconfig,
       'sharedwithmain': sharedwithmain
@@ -264,27 +277,25 @@ def monitor(endpointidentifier:tuple, endpointconfig:dict, stopflag, changeflag,
     },
     'reporting': {
       'filepath': pathlib.Path('archive', endpointidentifier[0], endpointidentifier[2], endpointidentifier[4], endpointidentifier[3], endpointidentifier[1], 'report.json'),
-      'report': {},
-      'lastsavetime': time.perf_counter() - random.uniform(0,15),
-      'adbreaks': {},
-      'periods': {},
-      'validations': {
-        'failures': set()
-      }
-    }
+      'lastsavetime': 0.0,
+      'report': {}
+    },
+    'adbreaks': {}
   }
+  monitorinfo['reporting']['starttime'] = f"{monitorinfo['state']['startdatetime']}"
   if monitorinfo['config']['technology'] == 'dash':
     utils.initializemonitor(monitorinfo, 'dash')
   elif monitorinfo['config']['technology'] == 'hls':
     monitorinfo['manifest'] = {
       'multi': {
-        'lasthash': ''
+        'lasthash': '',
+        'renditions': {}
       }
     }
   # Configure logging
   logging.config.dictConfig(loggingconfig)
   monitorlogger = logging.getLogger('monitor')
-  logger = getloggeradapterclass(args.json_logger)(monitorlogger, {'type': monitorinfo['config']['type'], 'origin': monitorinfo['config']['origin'], 'workload': monitorinfo['config']['workload'], 'endpoint': monitorinfo['config']['endpoint'], 'technology': monitorinfo['config']['technology'], 'rendition': 'multi'})
+  logger = getloggeradapterclass(settings['application']['json_logger'])(monitorlogger, {'type': monitorinfo['config']['type'], 'origin': monitorinfo['config']['origin'], 'workload': monitorinfo['config']['workload'], 'endpoint': monitorinfo['config']['endpoint'], 'technology': monitorinfo['config']['technology'], 'rendition': 'multi'})
   if endpointconfig['loglevel'] in utils.loglevels.keys():
     logger.setLevel(utils.loglevels[endpointconfig['loglevel']])
   logger.info(f"Started monitoring origin endpoint {endpointconfig['manifesturl']}")
@@ -295,7 +306,7 @@ def monitor(endpointidentifier:tuple, endpointconfig:dict, stopflag, changeflag,
       monitorinfo['reporting']['report'] = json.load(file)
   # Start tracking
   try:
-    if 'trackingurl' in endpointconfig.keys():
+    if endpointconfig.get('trackingurl'):
       monitorinfo['state']['threads']['tracking'] = threading.Thread(target=utils.tracking, args=(logger, monitorinfo, endpointconfig))
       monitorinfo['state']['threads']['tracking'].start()
   except Exception as e:
@@ -318,8 +329,8 @@ def monitor(endpointidentifier:tuple, endpointconfig:dict, stopflag, changeflag,
       logger.debug(f"Requesting manifest")
       response = utils.request(logger, 'GET', endpointconfig['manifesturl'], 'manifest', 'multi', monitorinfo)
       # Save manifest response
-      if endpointconfig['manifests']['save']['local']:
-        utils.saveresponse(logger, response, monitorinfo, 'manifests', "", False)
+      if endpointconfig['manifests']['save']['local'] or endpointconfig['manifests']['save']['s3']:
+        utils.saveresponse(logger, response, monitorinfo, 'manifests', "", False, 'multi')
       if monitorinfo['config']['type'] == 'live':
         # If DASH
         if monitorinfo['config']['technology'] == 'dash':
@@ -343,13 +354,20 @@ def monitor(endpointidentifier:tuple, endpointconfig:dict, stopflag, changeflag,
             # Start threads at first, then restart threads if multivariant manifest has changed
             manifesthash = hashlib.md5(utils.decoderesponse(response, False)).hexdigest()
             if manifesthash != monitorinfo['manifest']['multi']['lasthash']:
-              monitorinfo['state']['restart'] = (True, 'Multivariant manifest has changed') if monitorinfo['manifest']['multi']['lasthash'] else (True, '')
+              # Initial manifest request
+              if not monitorinfo['manifest']['multi']['lasthash']:
+                monitorinfo['state']['restart'] = (True, '')
+              else:
+                # Subsequent multivariant manifest change and not DAI (server guided manifests update with every request)
+                if monitorinfo['config']['endpointconfig']['validations']['custom']['check_multivariant_change']:
+                  monitorinfo['state']['restart'] = (True, 'Multivariant manifest has changed')
+                  logger.warning(f"Multivariant manifest has changed", extra={'event': 'MULTIVARIANT_MANIFEST_CHANGED'})
             monitorinfo['manifest']['multi']['lasthash'] = manifesthash
             # Check if need to restart monitoring
             if monitorinfo['state']['restart'][0]:
               hls.restartthreads(logger, monitorinfo, utils.decoderesponse(response, True))
       # Publish metrics to CW
-      if endpointconfig['cwmetrics'] and not monitorinfo['args'].no_aws:
+      if endpointconfig['cwmetrics'] and monitorinfo['settings']['aws']['metrics'] and cloudwatch:
         if requesttime - monitorinfo['metrics']['lastpublishtime'] > monitorinfo['metrics']['publishinterval']:
           publishmetrics(logger, monitorinfo)
           monitorinfo['metrics']['lastpublishtime'] = time.perf_counter()
@@ -376,15 +394,19 @@ def monitor(endpointidentifier:tuple, endpointconfig:dict, stopflag, changeflag,
 
 # Find what endpoint configuration changes were made to know if worked needs to be restarted
 def needtorestartworker(old:dict, new:dict):
-  forbiddenpaths = {"root['manifests']['hlsrenditions']", "root['manifesturl']", "root['trackingurl']"}
+  forbiddenpaths = {"root['manifests']['hls_renditions']", "root['manifesturl']", "root['trackingurl']"}
   diff = DeepDiff(old, new)
-  if 'values_changed' not in diff:
-    return True
-  else:
-    if any(path in forbiddenpaths for path in diff['values_changed']):
-      return True
-    else:
-      return False
+  # No changes
+  if not diff:
+    return False
+  # Check all change types
+  for change_type in ['values_changed', 'iterable_item_added', 'iterable_item_removed', 'type_changes']:
+    if change_type in diff:
+      for path in diff[change_type]:
+        # Check if path starts with any forbidden path
+        if any(path.startswith(forbidden) for forbidden in forbiddenpaths):
+          return True
+  return False
 
 
 # Stop or start new monitor workers after any input or config change
@@ -430,33 +452,52 @@ def updateworkers():
 
 # Start monitor process
 def startmonitorworker(identifier:tuple, endpointconfig:dict):
-  if args.threads:
+  if settings['application']['threads']:
     mainconfig['stopflags'][identifier] = threading.Event()
     mainconfig['changeflags'][identifier] = threading.Event()
-    mainconfig['workers'][identifier] = threading.Thread(target=monitor, args=(identifier, endpointconfig, mainconfig['stopflags'][identifier], mainconfig['changeflags'][identifier], endpointinfofile.name, sharedwithmain, loggingconfig, args))
+    mainconfig['workers'][identifier] = threading.Thread(target=monitor, args=(identifier, endpointconfig, mainconfig['stopflags'][identifier], mainconfig['changeflags'][identifier], endpointinfofile.name, sharedwithmain, loggingconfig, settings))
   else:
     mainconfig['stopflags'][identifier] = multiprocessing.Event()
     mainconfig['changeflags'][identifier] = multiprocessing.Event()
-    mainconfig['workers'][identifier] = multiprocessing.Process(target=monitor, args=(identifier, endpointconfig, mainconfig['stopflags'][identifier], mainconfig['changeflags'][identifier], endpointinfofile.name, sharedwithmain, loggingconfig, args))
+    mainconfig['workers'][identifier] = multiprocessing.Process(target=monitor, args=(identifier, endpointconfig, mainconfig['stopflags'][identifier], mainconfig['changeflags'][identifier], endpointinfofile.name, sharedwithmain, loggingconfig, settings, mainconfig['s3_queue']))
   mainconfig['workers'][identifier].start()
   # Wait 50 milliseconds to avoid spike in new processes
   time.sleep(0.05)
 
 
+# Update x,y positions for each widget
+def recalculate_positions(renderjson):
+  try:
+    current_x = 0
+    current_y = 0
+    max_height_in_row = 0
+    for widget in renderjson.get('widgets', []):
+      width = widget.get('width', 4)
+      height = widget.get('height', 4)
+      if current_x + width > 24:
+        current_x = 0
+        current_y += max_height_in_row
+        max_height_in_row = 0
+      widget['x'] = current_x
+      widget['y'] = current_y
+      current_x += width
+      max_height_in_row = max(max_height_in_row, height)
+    return json.dumps(renderjson)
+  except Exception as e:
+    mainlogger.error(f"Error recalculating widget positions. Exception: {e} Traceback: {traceback.format_exc()}")
+
+
 # Render and save CW dashboards
 def renderandsavedashboard(renderinfo:dict):
+  render = ''
   try:
     if renderinfo['type'] in ['live', 'vod']:
       template = env.get_template(renderinfo['type'])
       render = template.render(renderinfo=renderinfo, dashboardconfig=dashboardconfig)
-      # Save render to file
-      with tempfile.NamedTemporaryFile(mode='w', delete=False) as f:
-        f.write(render)
-        mainlogger.info(f"Saved dashboard to {f.name}")
-      renderjson = json.loads(render)
+      render = recalculate_positions(json.loads(render))
       # Save dashboard to CloudWatch
       try:
-        dashboardname = f"{renderinfo['workload'].upper()}-{renderinfo['origin'].upper() if renderinfo['origin'] in ['emp', 'emt'] else renderinfo['origin'].capitalize()}-Canary-Monitor"
+        dashboardname = f"{renderinfo['workload']}_{renderinfo['origin']}_canary-monitor"
         response = cloudwatch.put_dashboard(DashboardName=dashboardname, DashboardBody=render)
         if response:
           mainlogger.info(f"Saved dashboard '{dashboardname}' to CloudWatch")
@@ -467,6 +508,11 @@ def renderandsavedashboard(renderinfo:dict):
         raise
   except Exception as e:
     mainlogger.error(f"Error creating dashboard for {renderinfo['workload']} workload, {renderinfo['origin']} origin. Exception: {e} Traceback: {traceback.format_exc()}")
+  finally:
+    # Save dashboard
+    with tempfile.NamedTemporaryFile(mode='w', delete=False) as f:
+      f.write(render)
+      mainlogger.info(f"Saved dashboard to {f.name}")
 
 
 # Create CW dashboards
@@ -487,24 +533,30 @@ def createdashboards():
             'origin': endpoint[4],
             'segmentrequests': False,
             'trackingrequests': False,
+            'includes_dash': False,
+            'includes_hls': False,
             'endpoints': []
           }
         endpointinfo = {
           'technology': endpoint[1],
           'endpoint': endpoint[3],
+          'isdai': endpoint[5],
           'segmentrequests': False,
           'trackingrequests': False,
           'config': config
         }
         # Include renditions
         if endpointinfo['technology'] == 'hls':
-          endpointinfo['renditions'] = sharedwithmain.get(endpoint, {}).get('hlsrenditions', [])
+          organizedendpoints[(endpoint[0], endpoint[2], endpoint[4])]['includes_hls'] = True
+          endpointinfo['renditions'] = sharedwithmain.get(endpoint, {}).get('hls_renditions', [])
           if not endpointinfo['renditions']:
             mainlogger.warning(f"Failed to collect rendition information for HLS endpoint {endpoint}")
+        elif endpointinfo['technology'] == 'dash':
+          organizedendpoints[(endpoint[0], endpoint[2], endpoint[4])]['includes_dash'] = True
         # if config['segments']['get'] or config['segments']['head']:
         #   organizedendpoints[(endpoint[0], endpoint[2], endpoint[4])]['segmentrequests'] = True
         #   endpointinfo['segmentrequests'] = True
-        if config['tracking']['get']:
+        if config['tracking']['get'] and endpointinfo['isdai']:
           organizedendpoints[(endpoint[0], endpoint[2], endpoint[4])]['trackingrequests'] = True
           endpointinfo['trackingrequests'] = True
         # Append endpointinfo to list of endpoints
@@ -532,6 +584,88 @@ def saveendpointinfotofile(endpointinfo:dict):
     mainlogger.info(f"Saved endpoint information to {endpointinfofile.name}")
 
 
+# Get hostname / instance id for service metric dimension
+def gethostname():
+  try:
+    http = urllib3.PoolManager()
+    # Get session token for IMDSv2
+    token_response = http.request('PUT','http://169.254.169.254/latest/api/token', headers={'X-aws-ec2-metadata-token-ttl-seconds': '21600'}, timeout=1.0)
+    token = token_response.data.decode('utf-8')
+    # Get instance ID using token
+    instance_response = http.request('GET','http://169.254.169.254/latest/meta-data/instance-id', headers={'X-aws-ec2-metadata-token': token}, timeout=1.0)
+    mainconfig['hostname'] = instance_response.data.decode('utf-8')
+    mainlogger.info(f"Got hostname {mainconfig['hostname']}")
+  except Exception as e:
+    mainconfig['hostname'] = socket.gethostname()
+  finally:
+    mainlogger.info(f"Got hostname '{mainconfig['hostname']}'")
+
+
+def publishservicemetrics():
+  if settings['aws']['metrics']:
+    try:
+      # Count endpoints by technology
+      tech_counts = {'hls': 0, 'dash': 0}
+      for endpoint_id in mainconfig['endpoints'].keys():
+        technology = endpoint_id[1].lower()
+        if technology in tech_counts:
+          tech_counts[technology] += 1
+      
+      metric_data = []
+      # Publish metric for each technology
+      for technology, count in tech_counts.items():
+        metric_data.append({
+          'MetricName': 'Endpoints',
+          'Value': count,
+          'Unit': 'Count',
+          'Timestamp': datetime.now(timezone.utc),
+          'Dimensions': [
+            {'Name': 'Hostname', 'Value': mainconfig['hostname']},
+            {'Name': 'Technology', 'Value': technology}
+          ]
+        })
+      cloudwatch.put_metric_data(
+        Namespace='CanaryMonitor',
+        MetricData=metric_data
+      )
+    except Exception as e:
+      mainlogger.error(f"Error publishing metrics: {e}")
+
+
+# Write files to S3
+def start_s3_upload_threads(queue, settings, logger, num_threads=10):
+  import threading
+  def upload_worker():
+    while True:
+      try:
+        item = queue.get()
+        if item is None:
+          break
+        # Unpack upload request
+        key, body = item
+        # Upload to S3
+        s3.put_object(Bucket=settings['aws']['bucket'], Key=key, Body=body)
+      except Exception as e:
+        logger.error(f"S3 upload error: {e}")
+  # Start upload threads
+  threads = []
+  for _ in range(num_threads):
+    t = threading.Thread(target=upload_worker, daemon=True)
+    t.start()
+    threads.append(t)
+  logger.info(f"Started {num_threads} S3 upload threads")
+  return threads
+
+
+def stop_s3_threads(queue, threads, logger):
+  # Send poison pills
+  for _ in range(len(threads)):
+    queue.put(None)
+  # Wait for threads to finish
+  for t in threads:
+    t.join(timeout=5)
+
+
 # Handle signals
 def signalhandler(signal, frame):
   raise KeyboardInterrupt()
@@ -539,15 +673,31 @@ def signalhandler(signal, frame):
 
 # Main
 if __name__ == '__main__':
-  # Read arguments
-  parser = argparse.ArgumentParser()
-  parser.add_argument('-t', '--threads', action='store_true', help='use threads instead of processes')
-  parser.add_argument('-na', '--no-aws', action='store_true', help='do not use AWS')
-  parser.add_argument('-r', '--region', type=str, default='us-west-2', help='AWS region to use, default: us-west-2')
-  parser.add_argument('-b', '--bucket', type=str, help='AWS S3 bucket name for archive')
-  parser.add_argument('-l', '--lambda-function', type=str, help='AWS Lambda arn for AWS CloudWatch dashboard reporting widget')
-  parser.add_argument('-jl', '--json-logger', action='store_true', help='use JSON logging if pythonjsonlogger is available')
-  args = parser.parse_args()
+  # Read settings from YAML file
+  gotsettingsfromfile = False
+  settings_path = pathlib.Path('settings.yaml')
+  if settings_path.is_file():
+    with open(settings_path, 'r') as f:
+      settings = yaml.safe_load(f)
+      gotsettingsfromfile = True
+  else:
+    settings = {
+      'application': {
+        'threads': False,
+        'json_logger': False,
+        'input_location': 'local'
+      },
+      'aws': {
+        'region': None,
+        'metrics': False,
+        'dashboards': False,
+        'bucket': None,
+        'lambda': {
+          'report': None,
+          'logs': None
+        }
+      }
+    }
 
   # Configure logging
   locallogsfolderpath = pathlib.Path('logs')
@@ -555,12 +705,11 @@ if __name__ == '__main__':
   
   # Use JSON logger only if requested and library is available
   loggingconfigpath = pathlib.Path(os.path.dirname(os.path.realpath(__file__)), 'loggingconfig.json')
-  
   with loggingconfigpath.open() as loggingconfigfile:
     loggingconfig = json.load(loggingconfigfile)
   
   # Check if JSON logging is requested and available
-  use_json = args.json_logger
+  use_json = settings['application']['json_logger']
   if use_json:
     try:
       import pythonjsonlogger
@@ -571,20 +720,26 @@ if __name__ == '__main__':
   if not use_json:
     loggingconfig['handlers']['filemonitor']['formatter'] = 'monitor'
     loggingconfig['handlers']['fileservice']['formatter'] = 'service'
-  
+
+  # Configure main logger
   logging.config.dictConfig(loggingconfig)
   mainlogger = logging.getLogger('service')
-  
-  if args.json_logger and not use_json:
+  if settings['application']['json_logger'] and not use_json:
     mainlogger.warning(f"Missing 'python-json-logger' package, will use default logging")
+
+  # Check if settings were loaded from file
+  if gotsettingsfromfile:
+    mainlogger.info(f"Loaded settings from {settings_path}")
+  else:
+    mainlogger.warning(f"Failed to load settings from {settings_path}")
 
   # Start
   mainlogger.info(f"Started")
 
   # Enable threading if platform is Windows
   if platform.system() == 'Windows':
-    mainlogger.info(f"Will use threads because system is Windows")
-    args.threads = True
+    mainlogger.info(f"Using threads because system is Windows")
+    settings['application']['threads'] = True
 
   # Import external libraries
   try:
@@ -595,41 +750,71 @@ if __name__ == '__main__':
     mainlogger.error(f"Exception: {e} Trackeback: {traceback.format_exc()}")
     sys.exit(1)
 
+  # Set worker type and prepare data sharing
+  if settings['application']['threads']:
+    sharedwithmain = {}
+  else:
+    multiprocessing.set_start_method('fork')
+    manager = multiprocessing.Manager()
+    sharedwithmain = manager.dict()
+
+
+  # Data
+  max_s3_upload_queue_size = 50
+  mainconfig = {
+    'stopflags': {},
+    'changeflags': {},
+    'workers': {},
+    'hashtable': {
+      'input': {},
+      'config': {}
+    },
+    'configcache': {},
+    'changedworkloads': [],
+    'hostname': '',
+    's3_queue': multiprocessing.Queue(maxsize=max_s3_upload_queue_size),
+    's3_threads': []  # S3 upload threads
+  }
+
   # Configure AWS resources
-  if not args.no_aws:
+  s3 = None
+  cloudwatch = None
+  if settings['aws']['metrics'] or settings['aws']['dashboards'] or settings['application']['input_location'] == 's3' or settings['aws']['bucket']:
     try:
       import boto3
       from botocore.config import Config
       from botocore.exceptions import BotoCoreError, ClientError
       config = Config(
-        region_name=args.region,
+        region_name=settings['aws']['region'],
         read_timeout=3,
         connect_timeout=3,
         retries={
           'max_attempts': 1
         }
       )
-      # Get account id
-      # awsaccountid = boto3.client('sts').get_caller_identity().get('Account')
-      # CloudWatch
-      cloudwatch = boto3.client('cloudwatch', config=config)
-      mainlogger.info(f"Configured CloudWatch client in {args.region}")
+      # Cloudwatch
+      if settings['aws']['metrics'] or settings['aws']['dashboards']:
+        cloudwatch = boto3.client('cloudwatch', config=config)
+        mainlogger.info(f"Configured CloudWatch client in {settings['aws']['region']}")
       # S3
-      if args.bucket:
+      if settings['application']['input_location'] == 's3' or settings['aws']['bucket']:
         s3 = boto3.client('s3', config=config)
-        mainlogger.info(f"Configured S3 client in {args.region}")
+        mainlogger.info(f"Configured S3 client in {settings['aws']['region']}")
         try:
-          s3.head_bucket(Bucket=args.bucket)
+          s3.head_bucket(Bucket=settings['aws']['bucket'])
+          mainlogger.info(f"Found bucket {settings['aws']['bucket']}")
+          # Start S3 upload threads
+          if settings['aws']['bucket']:
+            mainconfig['s3_threads'] = start_s3_upload_threads(mainconfig['s3_queue'], settings, mainlogger)
         except ClientError as e:
           if e.response['Error']['Code'] == '404':
             mainlogger.error(f"Error finding S3 bucket. Exception: {e}")
           elif e.response['Error']['Code'] == '403':
             mainlogger.error(f"Error accessing S3 bucket. Exception: {e}")
-          args.bucket = None
+          sys.exit(1)
     except Exception as e:
       mainlogger.error(f"Error initializing AWS resources. Exception: {e} Trackeback: {traceback.format_exc()}")
-      args.no_aws = True
-
+      sys.exit(1)
 
   # Prepare local storage
   localinputsfolderpath = pathlib.Path('origins')
@@ -641,48 +826,44 @@ if __name__ == '__main__':
   signal.signal(signal.SIGINT, signalhandler)  # 2
   signal.signal(signal.SIGTERM, signalhandler)  # 15
 
-  # Set worker type and prepare data sharing
-  if args.threads:
-    sharedwithmain = {}
-  else:
-    multiprocessing.set_start_method('fork')
-    manager = multiprocessing.Manager()
-    sharedwithmain = manager.dict()
-
-  # Data
-  mainconfig = {
-    'stopflags': {},
-    'changeflags': {},
-    'workers': {},
-    'hashtable': {
-      'input': {},
-      'config': {}
-    },
-    'changedworkloads': []
-  }
   dashboardconfig = {
     'maxwidth': 24,
     'header': {
-      'height': 1
+      'height': 1,
+      'width': 24,
+    },
+    'readme': {
+      'height': 4,
+      'width': 24,
     },
     'metric': {
       'height': 4,
       'width': 4
     },
-    'loginsights': {
-      'height': 8
-    },
     'report': {
-      'height': 8,
-      'bucket': args.bucket if args.bucket else None,
-      'lambda': args.lambda_function if args.lambda_function else None
+      'height': 12,
+      'width': 20,
+      'bucket': settings['aws']['bucket'] or None,
+      'lambda': settings['aws']['lambda']['report'] or None
     },
-    'jsonlogformat': args.json_logger,
-    'region': args.region
+    'logs': {
+      'height': 12,
+      'width': 4,
+      'lambda': settings['aws']['lambda']['logs'] or None
+    },
+    'jsonlogformat': settings['application']['json_logger'],
+    'region': settings['aws']['region'] or None
   }
 
   # Load default endpoint config
-  if pathlib.Path('configs', 'default.json').is_file():
+  if settings['application']['input_location'] == 's3':
+    try:
+      configdata = s3.get_object(Bucket=settings['aws']['bucket'], Key='configs/default.json')['Body'].read().decode('utf-8')
+      defaultendpointconfig = json.loads(configdata)
+    except Exception as e:
+      mainlogger.warning(f"Did not find default endpoint config file in S3. Exception: {e}")
+      sys.exit(1)
+  elif pathlib.Path('configs', 'default.json').is_file():
     with open(pathlib.Path('configs', 'default.json'), 'r') as file:
       defaultendpointconfig = json.load(file)
   else:
@@ -693,43 +874,55 @@ if __name__ == '__main__':
   endpointinfofile = tempfile.NamedTemporaryFile(mode='w+', delete=False)
   endpointinfofile.close()
 
-  # Collect information about endpoints
-  mainconfig['endpoints'] = getendpointsinfo()
-  saveendpointinfotofile(mainconfig['endpoints'])
-
   # Prepare dasbhoard templates
   env = Environment(loader=FileSystemLoader('templates'), autoescape=select_autoescape(), trim_blocks=True, lstrip_blocks=True)
-  env.globals['getpositions'] = getpositions
-  env.globals['initpositions'] = initpositions
 
-  # Start monitor workers
-  for key, value in mainconfig['endpoints'].items():
-    startmonitorworker(key, value)
-  mainlogger.info(f"Now monitoring {len(mainconfig['workers'])} endpoints")
+  # Get hostname / instance id
+  gethostname()
 
   # Main loop
   try:
+    # Collect endpoint information
+    mainconfig['endpoints'] = getendpointsinfo()
+    saveendpointinfotofile(mainconfig['endpoints'])
+
+    # Start monitor workers
+    for key, value in mainconfig['endpoints'].items():
+      startmonitorworker(key, value)
+    mainlogger.info(f"Now monitoring {len(mainconfig['workers'])} endpoints")
+
     while True:
       # Check for input and config changes
       inputorconfigchanges = checkforinputorconfigchanges()
       if inputorconfigchanges:
         for item in inputorconfigchanges:
           mainlogger.info(f"Input or config has changed, {item['change']}: {item['filename']}")
+          # Clear config cache
+          mainconfig['configcache'].clear()
         mainconfig['endpoints'] = updateworkers()
         mainlogger.info(f"Now monitoring {len(mainconfig['workers'])} endpoints")
-        if len(mainconfig['changedworkloads']) > 0 and not args.no_aws:
+        if len(mainconfig['changedworkloads']) > 0 and settings['aws']['dashboards']:
           createdashboards()
         mainconfig['changedworkloads'].clear()
+      # Check S3 upload queue
+      s3_queue_size = mainconfig['s3_queue'].qsize()
+      if s3_queue_size > max_s3_upload_queue_size * 0.5:
+        mainlogger.warning(f"S3 upload is backed up ({(s3_queue_size/max_s3_upload_queue_size) * 100}% full)")
+      # Publish metrics
+      publishservicemetrics()
       time.sleep(5)
   except KeyboardInterrupt:
     mainlogger.info(f"Received signal to stop, waiting for all workers to stop")
   except Exception as e:
     mainlogger.error(f"Error. Exception: {e} Traceback: {traceback.format_exc()}")
   finally:
+    mainlogger.info(f"Stopping workers")
     for flag in mainconfig['stopflags'].values():
       flag.set() # noqa
     for worker in mainconfig['workers'].values():
       worker.join() # noqa
-
+    mainlogger.info(f"Stopping S3 upload threads")
+    if mainconfig['s3_threads']:
+      stop_s3_threads(mainconfig['s3_queue'], mainconfig['s3_threads'], mainlogger)
 
 

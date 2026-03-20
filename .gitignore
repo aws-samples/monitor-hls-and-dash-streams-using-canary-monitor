@@ -2,4 +2,5 @@ origins/*
 archive/*
 configs/*
 !configs/default.json
+settings.yaml
 loggingconfig.json

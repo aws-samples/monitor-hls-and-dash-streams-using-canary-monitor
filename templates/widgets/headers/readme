@@ -1,0 +1,11 @@
+{
+  "x": 0,
+  "y": 0,
+  "height": {{dashboardconfig['readme']['height']}},
+  "width": {{dashboardconfig['maxwidth']}},
+  "type": "text",
+  "properties": {
+    "markdown": "## Readme",
+    "background": "solid"
+  }
+}

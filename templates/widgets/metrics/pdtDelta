@@ -1,6 +1,6 @@
 {
-  "x": {{positions[0]}},
-  "y": {{positions[1]}},
+  "x": 0,
+  "y": 0,
   "height": {{dashboardconfig['metric']['height']}},
   "width": {{dashboardconfig['metric']['width']}},
   "type": "metric",
@@ -16,7 +16,7 @@
     "region": "{{dashboardconfig['region']}}",
     "stat": "Minimum",
     "period": 60,
-    "title": "PDT Delta [sec]",
+    "title": "PDT Delta [sec] (min)",
     "yAxis": {
       "left": {
         "showUnits": false,

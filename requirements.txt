@@ -7,3 +7,4 @@ botocore
 urllib3
 isodate
 python-json-logger
+pyyaml

@@ -4,35 +4,43 @@
   "manifests": {
     "frequency": 5.0,
     "save": {
+      "s3": false,
       "local": false
     },
-    "hlsrenditions": [ "video", "audio" ],
-    "adsegmentprefix": "asset"
+    "hls_renditions": [ "video", "audio" ],
+    "ad_segment_prefix": "asset"
   },
   "tracking": {
     "frequency": 6.0,
     "get": true,
     "save": {
+      "s3": false,
       "local": false
     },
     "playhead": false,
-    "playheaddelay": 10
+    "playhead_delay": 10
   },
   "reports": {
     "frequency": 60,
     "save": {
-      "s3": false
+      "s3": true
     }
   },
   "validations": {
     "perform": true,
     "custom": {
-      "requiredrenditions": [ "video", "audio" ],
-      "adbreaksctesignals": [ "spliceinsert" ],
-      "checkadbreakscteduration": true,
-      "maxadbreakdurationdelta": 0.5,
-      "maxptsdelta": 0.1,
-      "maxfuturesegmentavailability": 10
+      "check_multivariant_change": true,
+      "required_renditions": [ "video", "audio" ],
+      "ad_break_scte_signals": [ "splice_insert", 48, 50, 52, 54, 56 ],
+      "required_tracking_events": [ "impression", "start", "firstQuartile", "midpoint", "thirdQuartile", "complete" ],
+      "check_ad_break_scte_duration": true,
+      "check_ad_break_start_time": true,
+      "max_ad_break_duration_delta": 0.5,
+      "max_pts_delta": 0.1,
+      "max_segment_availability_delta": {
+        "in_past": 15,
+        "in_future": 5
+      }
     }
   }
 }

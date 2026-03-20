@@ -1,0 +1,351 @@
+{
+    "start": "-PT1H",
+    "end": "PT0H",
+    "widgets": [
+        {
+            "type": "text",
+            "x": 0,
+            "y": 19,
+            "width": 24,
+            "height": 1,
+            "properties": {
+                "markdown": "## Monitor"
+            }
+        },
+        {
+            "type": "metric",
+            "x": 5,
+            "y": 20,
+            "width": 5,
+            "height": 5,
+            "properties": {
+                "metrics": [
+                    [ "AWS/EC2", "CPUUtilization", "InstanceId", "${INSTANCE_ID}", { "label": "CPU", "region": "${REGION}" } ],
+                    [ "CWAgent", "mem_used_percent", ".", ".", { "label": "RAM", "region": "${REGION}" } ]
+                ],
+                "view": "timeSeries",
+                "stacked": false,
+                "region": "${REGION}",
+                "period": 60,
+                "stat": "Maximum",
+                "title": "EC2 Performance",
+                "legend": {
+                    "position": "bottom"
+                },
+                "yAxis": {
+                    "left": {
+                        "showUnits": false,
+                        "min": 0,
+                        "max": 100
+                    },
+                    "right": {
+                        "showUnits": false
+                    }
+                },
+                "annotations": {
+                    "horizontal": [
+                        {
+                            "color": "#d62728",
+                            "label": "Limit",
+                            "value": 80
+                        }
+                    ]
+                },
+                "liveData": true
+            }
+        },
+        {
+            "type": "custom",
+            "x": 5,
+            "y": 5,
+            "width": 5,
+            "height": 14,
+            "properties": {
+                "endpoint": "arn:aws:lambda:${REGION}:${ACCOUNT_ID}:function:canary-monitor-manage-endpoints",
+                "updateOn": {
+                    "refresh": true,
+                    "resize": true,
+                    "timeRange": true
+                },
+                "params": {
+                    "bucket": "${BUCKET}",
+                    "filename": "from-lambda.csv"
+                }
+            }
+        },
+        {
+            "type": "log",
+            "x": 10,
+            "y": 20,
+            "width": 14,
+            "height": 15,
+            "properties": {
+                "query": "SOURCE \"CanaryMonitor/ServiceLogs\" |\ndisplay @timestamp, levelname, message | sort @timestamp desc | limit 5000",
+                "queryBy": "logGroupName",
+                "logGroupPrefixes": {
+                    "logClass": "STANDARD",
+                    "logGroupPrefix": [],
+                    "accountIds": []
+                },
+                "region": "${REGION}",
+                "stacked": false,
+                "view": "table"
+            }
+        },
+        {
+            "type": "custom",
+            "x": 0,
+            "y": 5,
+            "width": 5,
+            "height": 14,
+            "properties": {
+                "endpoint": "arn:aws:lambda:${REGION}:${ACCOUNT_ID}:function:canary-monitor-manage-configurations",
+                "updateOn": {
+                    "refresh": true,
+                    "resize": true,
+                    "timeRange": true
+                },
+                "params": {
+                    "bucket": "${BUCKET}"
+                }
+            }
+        },
+        {
+            "type": "metric",
+            "x": 0,
+            "y": 20,
+            "width": 5,
+            "height": 5,
+            "properties": {
+                "metrics": [
+                    [ "CanaryMonitor", "Endpoints", "Technology", "hls", "Hostname", "${INSTANCE_ID}", { "id": "m1", "region": "${REGION}", "label": "HLS" } ],
+                    [ "...", "dash", ".", ".", { "id": "m2", "region": "${REGION}", "label": "DASH" } ]
+                ],
+                "view": "timeSeries",
+                "stacked": true,
+                "region": "${REGION}",
+                "title": "Endpoints",
+                "period": 60,
+                "yAxis": {
+                    "left": {
+                        "showUnits": false,
+                        "min": 0
+                    },
+                    "right": {
+                        "showUnits": false
+                    }
+                },
+                "stat": "Maximum",
+                "liveData": true,
+                "setPeriodToTimeRange": true
+            }
+        },
+        {
+            "type": "text",
+            "x": 0,
+            "y": 4,
+            "width": 24,
+            "height": 1,
+            "properties": {
+                "markdown": "## Control",
+                "background": "solid"
+            }
+        },
+        {
+            "type": "text",
+            "x": 0,
+            "y": 0,
+            "width": 21,
+            "height": 4,
+            "properties": {
+                "markdown": "## Readme\n\n\n**How to start monitoring**\n\n\n1. Using **Configurations -> Add** widget tab add new monitoring configuration unless default setttings fit your needs, in which case you can skip to step 2. The widget input form is populated with default monitoring settings. To add new configuration, edit the default settings and provide a file name, then hit the **Add** button.\n2. Using **Origins -> Add single** widget tab add new origin endpoint for monitoring. Fill in the input form (use file name from step 1 or *default.json* if using default settings), then hit the **Add** button.\n3. Refresh the **State** widget, which should now show your origin endpoint as running. It takes about 20 seconds for the Cloudwatch dashboard to be created or updated for the endpoints in your workload and origin group. Use the gear icon to manage the monitoring state of your endpoints.",
+                "background": "solid"
+            }
+        },
+        {
+            "type": "metric",
+            "x": 0,
+            "y": 25,
+            "width": 5,
+            "height": 5,
+            "properties": {
+                "region": "${REGION}",
+                "title": "Lambda Errors",
+                "metrics": [
+                    [ { "expression": "SEARCH('{AWS/Lambda,FunctionName} MetricName=\"Errors\" canary-monitor', 'Sum', 60)", "region": "${REGION}", "id": "e1" } ]
+                ],
+                "yAxis": {
+                    "left": {
+                        "min": 0,
+                        "label": "",
+                        "showUnits": false
+                    },
+                    "right": {
+                        "min": 0,
+                        "showUnits": false
+                    }
+                },
+                "view": "timeSeries",
+                "stacked": false,
+                "period": 300,
+                "legend": {
+                    "position": "hidden"
+                },
+                "annotations": {
+                    "horizontal": [
+                        {
+                            "label": "Limit",
+                            "value": 0
+                        }
+                    ]
+                }
+            }
+        },
+        {
+            "type": "metric",
+            "x": 5,
+            "y": 25,
+            "width": 5,
+            "height": 5,
+            "properties": {
+                "region": "${REGION}",
+                "title": "Lambda Duration [msec] (max)",
+                "metrics": [
+                    [ { "expression": "SEARCH('{AWS/Lambda,FunctionName} MetricName=\"Duration\" canary-monitor', 'Maximum', 60)", "region": "${REGION}", "id": "e1" } ]
+                ],
+                "yAxis": {
+                    "left": {
+                        "min": 0,
+                        "label": "",
+                        "showUnits": false
+                    },
+                    "right": {
+                        "min": 0,
+                        "showUnits": false
+                    }
+                },
+                "view": "timeSeries",
+                "stacked": false,
+                "legend": {
+                    "position": "hidden"
+                },
+                "period": 300,
+                "annotations": {
+                    "horizontal": [
+                        {
+                            "label": "Limit",
+                            "value": 30000
+                        }
+                    ]
+                }
+            }
+        },
+        {
+            "type": "custom",
+            "x": 21,
+            "y": 0,
+            "width": 3,
+            "height": 4,
+            "properties": {
+                "endpoint": "arn:aws:lambda:${REGION}:${ACCOUNT_ID}:function:canary-monitor-status",
+                "updateOn": {
+                    "refresh": true,
+                    "resize": true,
+                    "timeRange": true
+                },
+                "params": {
+                    "alarm": "arn:aws:cloudwatch:${REGION}:${ACCOUNT_ID}:alarm:canary-monitor-${REGION_CODE}-status"
+                }
+            }
+        },
+        {
+            "type": "metric",
+            "x": 0,
+            "y": 30,
+            "width": 5,
+            "height": 5,
+            "properties": {
+                "view": "timeSeries",
+                "stacked": false,
+                "region": "${REGION}",
+                "title": "S3 Requests",
+                "metrics": [
+                    [ "AWS/S3", "GetRequests", "BucketName", "${BUCKET}", "FilterId", "all", { "id": "m2", "region": "${REGION}", "label": "GET" } ],
+                    [ ".", "PutRequests", ".", ".", ".", ".", { "id": "m1", "region": "${REGION}", "label": "PUT" } ]
+                ],
+                "period": 60,
+                "stat": "Sum",
+                "legend": {
+                    "position": "bottom"
+                },
+                "yAxis": {
+                    "left": {
+                        "min": 0,
+                        "showUnits": false
+                    },
+                    "right": {
+                        "showUnits": false
+                    }
+                },
+                "liveData": false
+            }
+        },
+        {
+            "type": "metric",
+            "x": 5,
+            "y": 30,
+            "width": 5,
+            "height": 5,
+            "properties": {
+                "title": "S3 Request Latency [msec] (p99)",
+                "metrics": [
+                    [ "AWS/S3", "TotalRequestLatency", "BucketName", "${BUCKET}", "FilterId", "all", { "id": "m1", "region": "${REGION}" } ]
+                ],
+                "view": "timeSeries",
+                "stacked": false,
+                "region": "${REGION}",
+                "period": 60,
+                "stat": "p99",
+                "legend": {
+                    "position": "hidden"
+                },
+                "yAxis": {
+                    "left": {
+                        "min": 0,
+                        "showUnits": false
+                    },
+                    "right": {
+                        "min": 0,
+                        "showUnits": false
+                    }
+                },
+                "annotations": {
+                    "horizontal": [
+                        {
+                            "label": "Limit",
+                            "value": 2000
+                        }
+                    ]
+                }
+            }
+        },
+        {
+            "type": "custom",
+            "x": 10,
+            "y": 5,
+            "width": 14,
+            "height": 14,
+            "properties": {
+                "endpoint": "arn:aws:lambda:${REGION}:${ACCOUNT_ID}:function:canary-monitor-manage-workloads",
+                "updateOn": {
+                    "refresh": true,
+                    "resize": true,
+                    "timeRange": true
+                },
+                "params": {
+                    "bucket": "${BUCKET}"
+                }
+            }
+        }
+    ]
+}
