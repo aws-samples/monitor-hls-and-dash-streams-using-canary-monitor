@@ -137,7 +137,7 @@ def lambda_handler(event, context):
 </cwdb-action>''')
         
         # Archive icon (fourth) - S3 console link (always AWS console)
-        if 'console.aws.amazon.com' in domain:
+        if domain.endswith('.console.aws.amazon.com'):
             s3_url = f"{domain}/s3/buckets/{bucket}?region={region}&prefix=archive/live/{workload}/{origin}/&showversions=false"
         else:
             # Fallback if domain is internal - use Lambda context region
@@ -147,7 +147,7 @@ def lambda_handler(event, context):
         # Dashboard icon (last, if available)
         if has_dashboard:
             # Build dashboard URL based on domain
-            if 'console.aws.amazon.com' in domain:
+            if domain.endswith('.console.aws.amazon.com'):
                 # Extract region from domain
                 region = domain.split('.console.aws.amazon.com')[0].split('.')[-1]
                 dashboard_url = f"{domain}/cloudwatch/home?region={region}#dashboards/dashboard/{dashboard_name}"
