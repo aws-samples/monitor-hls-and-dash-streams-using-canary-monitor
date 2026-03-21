@@ -120,15 +120,24 @@ def ask(question):
     answer = input(question).strip().lower()
     return answer != 'n'
 
-def print_policy_file(filename, description):
+def print_policy_file(filename):
     """Print a policy JSON file from the tools directory"""
     policy_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), filename)
     if os.path.exists(policy_path):
-        print(f"\n{description}:\n")
+        print()
         with open(policy_path, 'r') as f:
             print(f.read(), end='')
     else:
         print(f"✗ Policy file not found: {policy_path}")
+
+def print_settings_yaml():
+    """Print settings.yaml content if it was potentially modified"""
+    settings_path = os.path.join(get_root_dir(), 'settings.yaml')
+    if os.path.exists(settings_path):
+        with open(settings_path, 'r') as f:
+            content = f.read()
+        print("\nMake sure your settings.yaml on the EC2 instance matches the following:\n")
+        print(content)
 
 def restart_canary_monitor_if_running():
     """Ask to restart canary monitor if it is running as a service"""
@@ -189,6 +198,14 @@ def setup_python():
 
 def setup_cloudwatch_agent(region, instance_id):
     """Setup CloudWatch agent for logs and system metrics"""
+    # Install agent if not present
+    if os.system('which amazon-cloudwatch-agent-ctl >/dev/null 2>&1') != 0:
+        print("Installing CloudWatch agent...")
+        if os.system('sudo dnf install amazon-cloudwatch-agent -y') != 0:
+            print("✗ Failed to install CloudWatch agent")
+            return
+        print("✓ CloudWatch agent installed")
+
     root_dir = get_root_dir()
 
     # Ensure json_logger is enabled in settings.yaml (required for CW agent log parsing)
@@ -412,10 +429,8 @@ def menu_ec2_setup():
                     settings_region = stripped.split(':', 1)[1].strip()
                     if not settings_region or settings_region != ec2_region:
                         if settings_region:
-                            print(f"EC2 instance region is '{ec2_region}' but settings.yaml has '{settings_region}'")
-                        else:
-                            print(f"Region in settings.yaml is not set")
-                        chosen = input(f"What is the correct region for Canary Monitor to use? [{ec2_region}]: ").strip() or ec2_region
+                            print(f"\nEC2 instance region is '{ec2_region}' but settings.yaml has '{settings_region}'")
+                        chosen = input(f"\nWhat is the correct region for Canary Monitor to use? [{ec2_region}]: ").strip() or ec2_region
                         region = chosen
                         with open(settings_path, 'r') as sf:
                             content = sf.read()
@@ -844,6 +859,7 @@ def menu_aws_setup():
         else:
             print("✗ Instance ID is required for CloudWatch alarm")
 
+    print_settings_yaml()
     restart_canary_monitor_if_running()
 
 
@@ -861,33 +877,38 @@ def menu_continuous_management():
     if ask("\nWould you like to update AWS CloudWatch management dashboard? [y]/n: "):
         setup_cloudwatch_dashboard(account_id, region)
 
+    print_settings_yaml()
+
 
 # --- Menu 1: Check Permissions ---
 
 def menu_check_permissions():
     """Check IAM permissions and display policy documents"""
-    answer = input("\nThe EC2 instance role should contain handful of permissions for full functionality of the canary monitor. Would you like to print an example inline policy that can be attached to the EC2 instance role? [y]/n: ").strip().lower()
+    answer = input("\nThe EC2 instance role should contain handful of permissions for full functionality of the canary monitor. Would you like to print an example inline policy that can be attached to the EC2 instance role and check some of the permissions? [y]/n: ").strip().lower()
     if answer != 'n':
-        print_policy_file('iam-policy-ec2.json', 'EC2 instance role policy (runtime permissions for Canary Monitor)')
+        print_policy_file('iam-policy-ec2.json')
+        check_ec2_permissions()
 
-    answer = input("\nIn order to use this script to set up AWS resources like AWS S3 and Lambda, the user running this script needs permissions to those services. Would you like to print an example inline policy with the required permissions? [y]/n: ").strip().lower()
+    answer = input("\nIn order to use this script to set up AWS resources like AWS S3 and Lambda, the user or the EC2 instance running this script needs permissions to those services. Would you like to print an example inline policy with the required permissions? [y]/n: ").strip().lower()
     if answer != 'n':
-        print_policy_file('iam-policy-setup.json', 'Setup user policy (permissions for deploying AWS resources)')
-
-    if ask("\nWould you like to check some of the IAM permissions of the current caller? [y]/n: "):
-        check_iam_permissions()
+        print_policy_file('iam-policy-setup.json')
+        check_setup_permissions()
 
 
 # --- Main ---
 
-def check_iam_permissions():
-    """Check IAM permissions of the current caller"""
-    # Determine region for service clients
+def get_check_region():
+    """Get region for permission checks"""
     region = _session.region_name
     if not region:
         _, region, _ = get_ec2_metadata()
     if not region:
         region = input("\nAWS region: ").strip()
+    return region
+
+def check_ec2_permissions():
+    """Check EC2 runtime permissions"""
+    region = get_check_region()
     if not region:
         print("✗ AWS region is required for permission checks")
         return
@@ -899,12 +920,19 @@ def check_iam_permissions():
     except Exception:
         print("\n✗ CloudWatch: cloudwatch:ListDashboards")
 
+def check_setup_permissions():
+    """Check setup user permissions"""
+    region = get_check_region()
+    if not region:
+        print("✗ AWS region is required for permission checks")
+        return
+
     try:
         s3 = get_client('s3', region_name=region)
         s3.list_buckets()
-        print("✓ S3: s3:ListAllMyBuckets")
+        print("\n✓ S3: s3:ListAllMyBuckets")
     except Exception:
-        print("✗ S3: s3:ListAllMyBuckets")
+        print("\n✗ S3: s3:ListAllMyBuckets")
 
     try:
         lam = get_client('lambda', region_name=region)

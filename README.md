@@ -53,17 +53,21 @@ The syntax of the CSV file content in the `origins` folder is as follows:
 live, dash, tnf25, feed01p1_pdx_1, emp, false, default.json, https://abcd.mediapackage.us-west-2.amazonaws.com/out/v1/abcd/cenc.mpd
 ```
 
-**To get the most out of the canary monitor** - to run it as a service and manage all aspects of monitoring from a CloudWatch dashboard, consider setting up the environment and AWS resources using `tools/configure-and-manage.py` script. It helps you 
+**To get the most out of the canary monitor** - to run it as a service and manage all aspects of monitoring from a CloudWatch dashboard, consider setting up the environment and AWS resources using `tools/configure-and-manage.py` script.
 
-- Create an IAM role with the necessary permissions
-- Install Python 3.12 environment with all dependencies
-- Set up canary monitor as system service
-- Set up logrotate for canary monitor logs
-- Set up AWS CloudWatch agent for forwarding logs to CloudWatch
-- Set up AWS S3 bucket for archiving manifests and report data
-- Set up AWS Lambda functions for custom CloudWatch dashboard widgets
+The `tools/configure-and-manage.py` has these menu options:
 
-That will allow you to create configurations and workloads and start or stop monitoring endpoints using the management dashboard: 
+```
+1. Check Permissions
+2. Setup Host System
+3. Setup AWS Resources
+4. Manage Updates
+5. Exit
+```
+
+After cloning the repo you can run the tool on an EC2 instance and select menu options 1, 2 to help you set up the EC2 IAM role and the host system. You can clone the repo in AWS CloudShell and run the `tools/configure-and-manage.py` script to help you set up the AWS S3, Lambda and CloudWatch resources or manage updates using menu options 3, 4.
+
+As result, you will be able to create configurations and workloads and start or stop monitoring endpoints using the management dashboard:
 
 
 ### Notes on Input
