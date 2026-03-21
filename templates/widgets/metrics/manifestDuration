@@ -1,0 +1,41 @@
+{
+  "x": 0,
+  "y": 0,
+  "height": {{dashboardconfig['metric']['height']}},
+  "width": {{dashboardconfig['metric']['width']}},
+  "type": "metric",
+  "properties": {
+    "metrics": [
+      {% set ns = namespace(count = 0) %}
+      {% for endpoint in renderinfo['endpoints'] %}
+        {% if endpoint['technology'] == 'hls' %}
+          {% for rendition in endpoint['renditions'] %}
+            {% if ns.count > 0 %}, {% endif %}[ "CanaryMonitor", "ManifestDuration", "Origin", "{{renderinfo['origin']}}", "Type", "{{renderinfo['type']}}", "Endpoint", "{{endpoint['endpoint']}}", "Technology", "{{endpoint['technology']}}", "Rendition", "{{rendition}}", "Workload", "{{renderinfo['workload']}}"]{% set ns.count = ns.count + 1 %}
+          {% endfor %}
+        {% elif endpoint['technology'] == 'dash' %}
+          {% if ns.count > 0 %}, {% endif %}[ "CanaryMonitor", "ManifestDuration", "Origin", "{{renderinfo['origin']}}", "Type", "{{renderinfo['type']}}", "Endpoint", "{{endpoint['endpoint']}}", "Technology", "{{endpoint['technology']}}", "Workload", "{{renderinfo['workload']}}"]{% set ns.count = ns.count + 1 %}
+        {% endif %}
+      {% endfor %}
+    ],
+    "view": "timeSeries",
+    "stacked": false,
+    "region": "{{dashboardconfig['region']}}",
+    "stat": "Average",
+    "period": 60,
+    "title": "Manifest Duration [sec] (avg)",
+    "yAxis": {
+      "left": {
+        "showUnits": false,
+        "label": "",
+        "min": 0
+      },
+      "right": {
+        "showUnits": false
+      }
+    },
+    "legend": {
+      "position": "bottom"
+    },
+    "liveData": true
+  }
+}

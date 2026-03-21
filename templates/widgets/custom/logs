@@ -1,0 +1,21 @@
+{
+  "x": 0,
+  "y": 0,
+  "height": {{dashboardconfig['logs']['height']}},
+  "width": {{dashboardconfig['logs']['width']}},
+  "type": "custom",
+  "properties": {
+    "endpoint": "{{dashboardconfig['logs']['lambda']}}",
+    "updateOn": {
+      "refresh": true,
+      "resize": true,
+      "timeRange": true
+    },
+    "params": {
+      "type": "{{renderinfo['type']}}",
+      "workload": "{{renderinfo['workload']}}",
+      "origin": "{{renderinfo['origin']}}",
+      "endpoints": [{% for endpoint in renderinfo['endpoints'] %}"{{endpoint['endpoint']}}"{% if not loop.last %},{% endif %}{% endfor %}]
+    }
+  }
+}
