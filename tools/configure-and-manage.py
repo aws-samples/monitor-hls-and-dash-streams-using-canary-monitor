@@ -130,14 +130,30 @@ def print_policy_file(filename):
     else:
         print(f"✗ Policy file not found: {policy_path}")
 
-def print_settings_yaml():
-    """Print settings.yaml content if it was potentially modified"""
+def print_settings_yaml(region):
+    """Print settings.yaml with recommended values applied"""
     settings_path = os.path.join(get_root_dir(), 'settings.yaml')
-    if os.path.exists(settings_path):
-        with open(settings_path, 'r') as f:
-            content = f.read()
-        print("\nMake sure your settings.yaml on the EC2 instance matches the following:\n")
-        print(content)
+    if not os.path.exists(settings_path):
+        return
+    with open(settings_path, 'r') as f:
+        content = f.read()
+    content = content.replace('json_logger: false', 'json_logger: true')
+    content = content.replace('metrics: false', 'metrics: true')
+    content = content.replace('dashboards: false', 'dashboards: true')
+    content = content.replace('input_location: local', 'input_location: s3')
+    for line in content.splitlines():
+        if line.strip().startswith('region:'):
+            current_region = line.strip().split(':', 1)[1].strip()
+            if not current_region:
+                content = content.replace('region:', f'region: {region}', 1)
+            break
+    # Remove comment lines
+    lines = [l for l in content.splitlines() if not l.strip().startswith('#')]
+    # Remove leading blank lines
+    while lines and not lines[0].strip():
+        lines.pop(0)
+    print("\nIf the AWS resources were successfully created, make sure your settings.yaml on the EC2 instance matches the following:\n")
+    print('\n'.join(lines))
 
 def restart_canary_monitor_if_running():
     """Ask to restart canary monitor if it is running as a service"""
@@ -859,7 +875,7 @@ def menu_aws_setup():
         else:
             print("✗ Instance ID is required for CloudWatch alarm")
 
-    print_settings_yaml()
+    print_settings_yaml(region)
     restart_canary_monitor_if_running()
 
 
@@ -877,7 +893,7 @@ def menu_continuous_management():
     if ask("\nWould you like to update AWS CloudWatch management dashboard? [y]/n: "):
         setup_cloudwatch_dashboard(account_id, region)
 
-    print_settings_yaml()
+    print_settings_yaml(region)
 
 
 # --- Menu 1: Check Permissions ---
