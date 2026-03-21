@@ -69,6 +69,7 @@ After cloning the repo you can run the tool on an EC2 instance and select menu o
 
 As result, you will be able to create configurations and workloads and start or stop monitoring endpoints using the management dashboard:
 
+<img width="2562" height="1440" alt="Screenshot from 2026-03-20 14-19-19" src="https://github.com/user-attachments/assets/bf1fc1ea-0313-49ca-93cb-078d36244985" />
 
 ### Notes on Input
 
@@ -166,7 +167,7 @@ Common dimensions for all metrics are `Type`, `Technology`, `Workload`, `Endpoin
 
 Example CloudWatch dashboard dynamically created by the canary monitor tool:
 
-<img width="2543" height="635" alt="image" src="https://github.com/user-attachments/assets/d3e9846a-2cb3-414b-b1c3-19b73c6bd8bc" />
+<img width="2568" height="1242" alt="Screenshot from 2026-03-20 14-16-51" src="https://github.com/user-attachments/assets/7d8432d6-ffab-4aa9-8b35-f67aa81b60ba" />
 
 
 ## Logging and Validations
