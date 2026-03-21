@@ -53,9 +53,9 @@ The syntax of the CSV file content in the `origins` folder is as follows:
 live, dash, tnf25, feed01p1_pdx_1, emp, false, default.json, https://abcd.mediapackage.us-west-2.amazonaws.com/out/v1/abcd/cenc.mpd
 ```
 
-**To get the most out of the canary monitor** - to run it as a service and manage all aspects of monitoring from a CloudWatch dashboard, consider setting up the environment and AWS resources using `tools/configure-and-manage.py` script.
+**To get the most out of the canary monitor** - to run it as a service and manage monitoring from a CloudWatch dashboard, consider setting up the environment and AWS resources using `tools/configure-and-manage.py` script.
 
-The `tools/configure-and-manage.py` has these menu options:
+The `tools/configure-and-manage.py` script has these menu options:
 
 ```
 1. Check Permissions
@@ -65,9 +65,9 @@ The `tools/configure-and-manage.py` has these menu options:
 5. Exit
 ```
 
-After cloning the repo you can run the tool on an EC2 instance and select menu options 1, 2 to help you set up the EC2 IAM role and the host system. You can clone the repo in AWS CloudShell and run the `tools/configure-and-manage.py` script to help you set up the AWS S3, Lambda and CloudWatch resources or manage updates using menu options 3, 4.
+After cloning the repo you can run the tool on an EC2 instance and select menu options 1, 2 to help you set up the EC2 IAM role and the host system for running the canary monitor as service. You can clone the repo in AWS CloudShell and run the `tools/configure-and-manage.py` script to help you set up AWS S3, Lambda and CloudWatch resources using menu option 3.
 
-As result, you will be able to create configurations and workloads and start or stop monitoring endpoints using the management dashboard:
+As result, you will be able to create configurations, workloads and start or stop monitoring endpoints using the management dashboard:
 
 <img width="2562" height="1440" alt="Screenshot from 2026-03-20 14-19-19" src="https://github.com/user-attachments/assets/bf1fc1ea-0313-49ca-93cb-078d36244985" />
 
