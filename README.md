@@ -1,5 +1,5 @@
 > [!IMPORTANT]
-> Version 3 released 3/20/25 contains braking changes. Make sure to install all dependencies, stop using arguments and use settings.yaml file instead. Syntax in the input CSV file has changed too! The update provides major improvements to HLS and DASH stream validations and management option through AWS CloudWatch dashboard. See more info in below sections.
+> Version 3 released 3/20/26 contains braking changes. Make sure to install all dependencies, stop using arguments and use settings.yaml file instead. Syntax in the input CSV file has changed too! The update provides major improvements to HLS and DASH stream validations and management option through AWS CloudWatch dashboard. See more info in below sections.
 
 ## Monitor HLS and DASH Streams Using Canary Monitor
 
