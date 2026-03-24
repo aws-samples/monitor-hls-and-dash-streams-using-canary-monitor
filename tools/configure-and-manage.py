@@ -130,7 +130,7 @@ def print_policy_file(filename):
     else:
         print(f"✗ Policy file not found: {policy_path}")
 
-def print_settings_yaml(region):
+def print_settings_yaml(region, account_id=''):
     """Print settings.yaml with recommended values applied"""
     settings_path = os.path.join(get_root_dir(), 'settings.yaml')
     if not os.path.exists(settings_path):
@@ -147,6 +147,15 @@ def print_settings_yaml(region):
             if not current_region:
                 content = content.replace('region:', f'region: {region}', 1)
             break
+    if account_id:
+        for line in content.splitlines():
+            stripped = line.strip()
+            if stripped.startswith('bucket:') and not stripped.split(':', 1)[1].strip():
+                content = content.replace(line, f"  bucket: canary-monitor-{REGION_CODES.get(region, region)}-{account_id}", 1)
+            elif stripped.startswith('report:') and not stripped.split(':', 1)[1].strip():
+                content = content.replace(line, f"    report: arn:aws:lambda:{region}:{account_id}:function:canary-monitor-report", 1)
+            elif stripped.startswith('logs:') and not stripped.split(':', 1)[1].strip():
+                content = content.replace(line, f"    logs: arn:aws:lambda:{region}:{account_id}:function:canary-monitor-manage-logs", 1)
     # Remove comment lines
     lines = [l for l in content.splitlines() if not l.strip().startswith('#')]
     # Remove leading blank lines
@@ -345,10 +354,6 @@ def setup_logrotate():
     logs_dir = os.path.join(root_dir, 'logs')
     logrotate_file = '/etc/logrotate.d/canary-logs'
 
-    if os.path.exists(logrotate_file):
-        print(f"✓ Logrotate config already exists: {logrotate_file}")
-        return
-
     logrotate_content = f"""{os.path.join(logs_dir, '*.log')} {{
   su ec2-user ec2-user
   missingok
@@ -371,8 +376,7 @@ def setup_systemd_service():
     service_file = '/etc/systemd/system/canary-monitor.service'
     bashrc_file = os.path.expanduser('~/.bashrc')
 
-    if not os.path.exists(service_file):
-        service_content = f"""[Unit]
+    service_content = f"""[Unit]
 Description=Monitor for HLS, DASH streams
 After=network.target
 
@@ -387,16 +391,14 @@ Restart=no
 [Install]
 WantedBy=multi-user.target
 """
-        if not write_file_with_sudo(service_content, service_file):
-            print("✗ Failed to create service file")
-            return
+    if not write_file_with_sudo(service_content, service_file):
+        print("✗ Failed to create service file")
+        return
 
-        print(f"✓ Created {service_file}")
-        os.system('sudo systemctl daemon-reload')
-        os.system('sudo systemctl enable canary-monitor')
-        print("✓ Enabled canary-monitor at boot")
-    else:
-        print(f"✓ Service file already exists: {service_file}")
+    print(f"✓ Created {service_file}")
+    os.system('sudo systemctl daemon-reload')
+    os.system('sudo systemctl enable canary-monitor')
+    print("✓ Enabled canary-monitor at boot")
 
     # Add aliases
     aliases = [
@@ -875,7 +877,7 @@ def menu_aws_setup():
         else:
             print("✗ Instance ID is required for CloudWatch alarm")
 
-    print_settings_yaml(region)
+    print_settings_yaml(region, account_id)
     restart_canary_monitor_if_running()
 
 
@@ -893,7 +895,7 @@ def menu_continuous_management():
     if ask("\nWould you like to update AWS CloudWatch management dashboard? [y]/n: "):
         setup_cloudwatch_dashboard(account_id, region)
 
-    print_settings_yaml(region)
+    print_settings_yaml(region, account_id)
 
 
 # --- Menu 1: Check Permissions ---
