@@ -268,7 +268,7 @@ def monitor(endpointidentifier:tuple, endpointconfig:dict, stopflag, changeflag,
       'threads': {},
       'lock': threading.Lock(),
       'stop': threading.Event(),
-      'restart': (False, '')
+      'status': 'init'
     },
     'metrics': {
       'lastpublishtime': time.perf_counter() - random.uniform(0,15),
@@ -351,21 +351,20 @@ def monitor(endpointidentifier:tuple, endpointconfig:dict, stopflag, changeflag,
         # If HLS
         elif monitorinfo['config']['technology'] == 'hls':
           if response:
-            # Start threads at first, then restart threads if multivariant manifest has changed
-            manifesthash = hashlib.md5(utils.decoderesponse(response, False)).hexdigest()
-            if manifesthash != monitorinfo['manifest']['multi']['lasthash']:
-              # Initial manifest request
-              if not monitorinfo['manifest']['multi']['lasthash']:
-                monitorinfo['state']['restart'] = (True, '')
-              else:
-                # Subsequent multivariant manifest change and not DAI (server guided manifests update with every request)
-                if monitorinfo['config']['endpointconfig']['validations']['custom']['check_multivariant_change']:
-                  monitorinfo['state']['restart'] = (True, 'Multivariant manifest has changed')
-                  logger.warning(f"Multivariant manifest has changed", extra={'event': 'MULTIVARIANT_MANIFEST_CHANGED'})
+            manifestchanged = False
+            # Check for manifest content change
+            manifesthash = utils.getmultivariantfingerprint(logger, utils.decoderesponse(response, True))
+            if monitorinfo['manifest']['multi']['lasthash'] and manifesthash != monitorinfo['manifest']['multi']['lasthash']:
+              logger.warning(f"Multivariant manifest has changed", extra={'event': 'MULTIVARIANT_MANIFEST_CHANGED'})
+              manifestchanged = True
+            # Initialize rendition manifests monitoring
+            if monitorinfo['state']['status'] == 'init':
+              hls.startthreads(logger, monitorinfo, utils.decoderesponse(response, True), {})
+              monitorinfo['state']['status'] = 'running'
+            elif manifestchanged:
+              hls.startthreads(logger, monitorinfo, utils.decoderesponse(response, True), {'reason': 'MULTIVARIANT_MANIFEST_CHANGED'})
+            # Update manifest hash
             monitorinfo['manifest']['multi']['lasthash'] = manifesthash
-            # Check if need to restart monitoring
-            if monitorinfo['state']['restart'][0]:
-              hls.restartthreads(logger, monitorinfo, utils.decoderesponse(response, True))
       # Publish metrics to CW
       if endpointconfig['cwmetrics'] and monitorinfo['settings']['aws']['metrics'] and cloudwatch:
         if requesttime - monitorinfo['metrics']['lastpublishtime'] > monitorinfo['metrics']['publishinterval']:

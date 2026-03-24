@@ -246,7 +246,8 @@ def gothroughsegments(logger, renditionalias, renditionid, monitorinfo:dict, new
       if 0 < monitorinfo['manifest'][renditionalias]['lastsegmentnotfoundcount'] < 3:
         logger.warning(f"Last segment not found", extra={'event': 'LAST_SEGMENT_NOT_FOUND'})
       elif monitorinfo['manifest'][renditionalias]['lastsegmentnotfoundcount'] == 3:
-        monitorinfo['state']['restart'] = (True, 'Last segment not found in 3 consecutive manifest requests')
+        logger.warning(f"Last segment not found, restarting", extra={'event': 'LAST_SEGMENT_NOT_FOUND'})
+        monitorinfo['state']['status'] = 'init'
       if renditionalias == 'primary':
         # Check PDT delta
         if monitorinfo['manifest'][renditionalias]['last']['segment']['pdt']:
@@ -306,13 +307,23 @@ def monitor(renditionid, url:str, rendition:dict, monitorinfo:dict, primary:bool
     logger.info(f"Stopped monitoring")
 
 
-def startthreads(logger, monitorinfo:dict, response):
+def startthreads(logger, monitorinfo:dict, response, info):
   renditions = {
     'video': {},
     'audio': {},
     'subtitles': {}
   }
   try:
+    # Log start reason if present
+    if info.get('reason'):
+      logger.info(f"Restarting monitoring due to {info['reason']}")
+    # Stop active rendition threads if any are running
+    monitorinfo['state']['stop'].set()
+    for thread in monitorinfo['state']['threads'].keys():
+      if thread != 'tracking':
+        monitorinfo['state']['threads'][thread].join()
+    monitorinfo['state']['stop'].clear()
+    # Go through manifest and start monitoring renditions
     lines = response.splitlines()
     for i, line in enumerate(lines):
       line = line.strip()
@@ -404,23 +415,4 @@ def startthreads(logger, monitorinfo:dict, response):
     monitorinfo['manifest']['multi']['renditions'] = renditions
   except Exception as e:
     logger.error(f"Error starting threads. Exception: {str(e)} Traceback: {traceback.format_exc()}", extra={'event': 'INTERNAL_ERROR'})
-
-
-# Stop and start new HLS monitoring treads
-def restartthreads(logger, monitorinfo:dict, response):
-  try:
-    if monitorinfo['state']['restart'][1]:
-      logger.info(f"Restarting monitoring, reason: {monitorinfo['state']['restart'][1]}", extra={'event': 'RENDITION_NOT_FOUND'})
-    # Stop HLS monitoring threads
-    monitorinfo['state']['stop'].set()
-    for thread in monitorinfo['state']['threads'].keys():
-      if thread != 'tracking':
-        monitorinfo['state']['threads'][thread].join()
-    monitorinfo['state']['stop'].clear()
-    # Start new HLS monitoring threads
-    startthreads(logger, monitorinfo, response)
-    # Clear state
-    monitorinfo['state']['restart'] = (False, '')
-  except Exception as e:
-    logger.error(f"Error restarting threads. Exception: {str(e)} Traceback: {traceback.format_exc()}", extra={'event': 'INTERNAL_ERROR'})
 

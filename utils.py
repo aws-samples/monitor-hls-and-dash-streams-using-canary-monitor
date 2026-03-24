@@ -12,6 +12,7 @@ import isodate
 import threefive
 import random
 import re
+import hashlib
 
 # Custom exceptions
 class HTTPNon200Error(Exception):
@@ -183,6 +184,22 @@ def decoderesponse(response, utf:bool):
       return response.data.decode('utf-8')
     else:
       return response.data
+
+
+# Get multivariant manifest fingerprint based on rendition lines only
+def getmultivariantfingerprint(logger, manifest):
+  try:
+    lines = manifest.splitlines()
+    filtered = []
+    for i, line in enumerate(lines):
+      stripped = line.strip()
+      if stripped.startswith(('#EXT-X-VERSION:', '#EXT-X-MEDIA:', '#EXT-X-STREAM-INF:')):
+        filtered.append(stripped)
+        if stripped.startswith('#EXT-X-STREAM-INF:') and i + 1 < len(lines) and not lines[i + 1].strip().startswith('#'):
+          filtered.append(lines[i + 1].strip())
+    return hashlib.md5('\n'.join(filtered).encode('utf-8')).hexdigest()
+  except Exception as e:
+    logger.error(f"Error getting multivariant manifest fingerprint. Exception: {str(e)} Traceback: {traceback.format_exc()}", extra={'event': 'INTERNAL_ERROR'})
 
 
 # Save response to disk or to S3
