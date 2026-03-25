@@ -628,7 +628,24 @@ def deploy_lambda_functions(account_id, region):
         print("✗ No Lambda functions found")
         return
 
-    selected = lambda_files
+    print("\nAvailable Lambda functions:")
+    for i, f in enumerate(lambda_files, 1):
+        print(f"  {i}. {f.stem}")
+
+    choice = input("\nSelect function(s) to deploy (comma-separated numbers or * for all): ").strip()
+    if not choice or choice == '*':
+        selected = lambda_files
+    else:
+        try:
+            indices = [int(x.strip()) for x in choice.split(',')]
+            selected = [lambda_files[i - 1] for i in indices if 1 <= i <= len(lambda_files)]
+        except (ValueError, IndexError):
+            print("✗ Invalid selection")
+            return
+
+    if not selected:
+        print("✗ No functions selected")
+        return
 
     print(f"Deploying {len(selected)} Lambda function(s) to {region}\n")
 
@@ -894,8 +911,6 @@ def menu_continuous_management():
 
     if ask("\nWould you like to update AWS CloudWatch management dashboard? [y]/n: "):
         setup_cloudwatch_dashboard(account_id, region)
-
-    print_settings_yaml(region, account_id)
 
 
 # --- Menu 1: Check Permissions ---

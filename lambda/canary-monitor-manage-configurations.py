@@ -45,7 +45,6 @@ def lambda_handler(event, context):
         },
         "validations": {
             "custom": {
-                "check_multivariant_change": True,
                 "required_renditions": ["video", "audio"],
                 "ad_break_scte_signals": [ "splice_insert", 48, 50, 52, 54, 56 ],
                 "required_tracking_events": [ "impression", "start", "firstQuartile", "midpoint", "thirdQuartile", "complete" ],
