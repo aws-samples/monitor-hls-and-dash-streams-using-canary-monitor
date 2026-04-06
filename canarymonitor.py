@@ -49,8 +49,8 @@ def readcsvfile(filename, content, endpoints:dict):
         splitline = re.split(f',', line)
         if len(splitline) >= 8:
           validentry = True
-          for value in splitline:
-            if not value.strip():
+          for column, value in enumerate(splitline):
+            if column < 8 and not value.strip():
               mainlogger.warning(f"Found empty value in {filename} file on line {index}: {line.strip()}")
               validentry = False
               break
