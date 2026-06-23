@@ -35,12 +35,26 @@ http = urllib3.PoolManager(num_pools=5, maxsize=5, timeout=3, retries=urllib3.Re
 
 # SCTE messages
 segmentationmessagemap = {
+  '0': 'Not Indicated',
+  '1': 'Content Identification',
   '16': 'Program Start',
   '17': 'Program End',
+  '18': 'Program Early Termination',
+  '19': 'Program Breakaway',
+  '20': 'Program Resumption',
+  '21': 'Program Runover Planned',
+  '22': 'Program Runover Unplanned',
+  '23': 'Program Overlap Start',
+  '24': 'Program Blackout Override',
+  '25': 'Program Start In Progress',
   '32': 'Chapter Start',
   '33': 'Chapter End',
   '34': 'Break Start',
   '35': 'Break End',
+  '36': 'Opening Credit Start',
+  '37': 'Opening Credit End',
+  '38': 'Closing Credit Start',
+  '39': 'Closing Credit End',
   '48': 'Provider Advertisement Start',
   '49': 'Provider Advertisement End',
   '50': 'Distributor Advertisement Start',
@@ -50,7 +64,13 @@ segmentationmessagemap = {
   '54': 'Distributor Placement Opportunity Start',
   '55': 'Distributor Placement Opportunity End',
   '56': 'Provider Overlay Placement Opportunity Start',
-  '57': 'Provider Overlay Placement Opportunity End'
+  '57': 'Provider Overlay Placement Opportunity End',
+  '58': 'Distributor Overlay Placement Opportunity Start',
+  '59': 'Distributor Overlay Placement Opportunity End',
+  '64': 'Unscheduled Event Start',
+  '65': 'Unscheduled Event End',
+  '80': 'Network Start',
+  '81': 'Network End'
 }
 
 
