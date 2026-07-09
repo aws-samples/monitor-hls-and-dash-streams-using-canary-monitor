@@ -278,6 +278,7 @@ def getperiodinfo(logger, xmlperiod, monitorinfo:dict):
     try:
       periodinfo = {
         'observed': observetime,
+        'advertised_duration': xmlperiod.get('duration', ''),
         'duration': 0.0,
         'is_compact': False,
         'is_adbreak': False,
@@ -372,6 +373,12 @@ def gothroughsegments(logger, monitorinfo:dict, new:bool=False):
         monitorinfo['manifest']['primary']['last']['segment'] = segment.copy()
       # Update last period
       monitorinfo['manifest']['primary']['last']['period'] = periodid
+      # Check period duration
+      advertised_duration = monitorinfo['manifest']['primary']['periods'][periodid].get('advertised_duration')
+      if advertised_duration:
+        advertised_duration_sec = isodate.parse_duration(advertised_duration).total_seconds()
+        if monitorinfo['manifest']['primary']['periods'][periodid]['duration'] - advertised_duration_sec > 1:
+          logger.warning(f"Period id {periodid} has advertised duration {advertised_duration} ({round(advertised_duration_sec, 3)} s), which is less than the sum of segment durations in the period by {round(abs(monitorinfo['manifest']['primary']['periods'][periodid]['duration'] - advertised_duration_sec), 3)} s", extra={'event': 'PERIOD_DURATION_DELTA'})
     if new:
       lastsegment = monitorinfo['manifest']['primary']['last']['segment']
       # Check for segment availability delta of last new segment
