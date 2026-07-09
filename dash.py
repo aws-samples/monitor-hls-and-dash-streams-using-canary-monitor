@@ -65,7 +65,8 @@ def getsegmentinfo(logger, monitorinfo:dict, segmenttemplate, xmlperiod, allsegm
                 't': compt,
                 'nextt': compt + d,
                 'pts': periodstart + (compt - pto) / timescale,
-                'ast+pts': availabilitystarttime + timedelta(seconds=periodstart + (compt - pto) / timescale) if availabilitystarttime else None
+                'ast+pts': availabilitystarttime + timedelta(seconds=periodstart + (compt - pto) / timescale) if availabilitystarttime else None,
+                't+d-pto': (compt + d - pto) / timescale
               }
               monitorinfo['manifest']['primary']['new']['segments'].setdefault(periodid, []).append(segment)
               if not allsegments:
@@ -373,12 +374,14 @@ def gothroughsegments(logger, monitorinfo:dict, new:bool=False):
         monitorinfo['manifest']['primary']['last']['segment'] = segment.copy()
       # Update last period
       monitorinfo['manifest']['primary']['last']['period'] = periodid
-      # Check period duration
-      advertised_duration = monitorinfo['manifest']['primary']['periods'][periodid].get('advertised_duration')
-      if advertised_duration:
-        advertised_duration_sec = isodate.parse_duration(advertised_duration).total_seconds()
-        if monitorinfo['manifest']['primary']['periods'][periodid]['duration'] - advertised_duration_sec > 1:
-          logger.warning(f"Period id {periodid} has {round(abs(monitorinfo['manifest']['primary']['periods'][periodid]['duration'] - advertised_duration_sec), 3)} s more of segments content than is the advertised period duration {advertised_duration} ({round(advertised_duration_sec, 3)} s)", extra={'event': 'PERIOD_DURATION_DELTA'})
+      # Check for last segment exceeding period duration
+      period_advertised_duration = monitorinfo['manifest']['primary']['periods'][periodid].get('advertised_duration')
+      if period_advertised_duration:
+        period_advertised_duration_sec = isodate.parse_duration(period_advertised_duration).total_seconds()
+        duration_delta = monitorinfo['manifest']['primary']['last']['segment']['t+d-pto'] - period_advertised_duration_sec
+        if duration_delta > 1:
+          logger.warning(f"Segments in period {periodid} exceed the period duration by {round(duration_delta, 3)} s", extra={'event': 'PERIOD_DURATION_EXCEEDED'})
+    # If this is not 1st manifest request
     if new:
       lastsegment = monitorinfo['manifest']['primary']['last']['segment']
       # Check for segment availability delta of last new segment
