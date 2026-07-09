@@ -378,7 +378,7 @@ def gothroughsegments(logger, monitorinfo:dict, new:bool=False):
       if advertised_duration:
         advertised_duration_sec = isodate.parse_duration(advertised_duration).total_seconds()
         if monitorinfo['manifest']['primary']['periods'][periodid]['duration'] - advertised_duration_sec > 1:
-          logger.warning(f"Period id {periodid} has advertised duration {advertised_duration} ({round(advertised_duration_sec, 3)} s), which is less than the sum of segment durations in the period by {round(abs(monitorinfo['manifest']['primary']['periods'][periodid]['duration'] - advertised_duration_sec), 3)} s", extra={'event': 'PERIOD_DURATION_DELTA'})
+          logger.warning(f"Period id {periodid} has {round(abs(monitorinfo['manifest']['primary']['periods'][periodid]['duration'] - advertised_duration_sec), 3)} s more of segments content than is the advertised period duration {advertised_duration} ({round(advertised_duration_sec, 3)} s)", extra={'event': 'PERIOD_DURATION_DELTA'})
     if new:
       lastsegment = monitorinfo['manifest']['primary']['last']['segment']
       # Check for segment availability delta of last new segment
@@ -487,6 +487,11 @@ def monitor(logger, monitorinfo:dict, response:bytes):
               segmenttemplates, primarysegmenttemplate = getsegmenttemplateinfo(logger, xmlperiod, monitorinfo)
               getsegmentinfo(logger, monitorinfo, primarysegmenttemplate, xmlperiod, False, False)
               checklipsync(logger, monitorinfo, xmlperiod, segmenttemplates)
+              # Update advertised period duration
+              advertised_duration = xmlperiod.get('duration', '')
+              if advertised_duration != monitorinfo['manifest']['primary']['periods'][periodid]['advertised_duration']:
+                logger.debug(f"Period {periodid} has new advertised duration {advertised_duration}")
+                monitorinfo['manifest']['primary']['periods'][periodid]['advertised_duration'] = advertised_duration
             # Collect period ids for manifest consistency check and check for duplicate periods
             if periodid and periodid in monitorinfo['manifest']['primary']['consistency']['current']['periods']:
               logger.warning(f"Manifest has duplicate period id '{periodid}'", extra={'event': 'DUPLICATE_PERIOD'})

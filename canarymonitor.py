@@ -894,6 +894,7 @@ if __name__ == '__main__':
       # Check for input and config changes
       inputorconfigchanges = checkforinputorconfigchanges()
       if inputorconfigchanges:
+        time.sleep(5)
         for item in inputorconfigchanges:
           mainlogger.info(f"Input or config has changed, {item['change']}: {item['filename']}")
           # Clear config cache
