@@ -277,16 +277,17 @@ def saveresponse(logger, response, monitorinfo:dict, filetypegroup:str, filename
         if binary:
           pass
         else:
-          s3_key = f"{dst}/{timestamp}{filename}{extension}.gz"
           bucket = monitorinfo['settings']['aws']['bucket']
-          # Prepare data for S3 upload
-          if isgzip:
-            body = response.data
-          else:
-            body = gzip.compress(response.data)
-          # Queue S3 upload request (non-blocking)
-          monitorinfo['s3_queue'].put((s3_key, body))
-          logger.debug(f"Queued S3 upload to s3://{bucket}/{s3_key}")
+          if bucket:
+            s3_key = f"{dst}/{timestamp}{filename}{extension}.gz"
+            # Prepare data for S3 upload
+            if isgzip:
+              body = response.data
+            else:
+              body = gzip.compress(response.data)
+            # Queue S3 upload request (non-blocking)
+            monitorinfo['s3_queue'].put((s3_key, body))
+            logger.debug(f"Queued S3 upload to s3://{bucket}/{s3_key}")
   except Exception as e:
     logger.error(f"Error saving response. Exception: {str(e)} Traceback: {traceback.format_exc()}", extra={'event': 'INTERNAL_ERROR'})
 
@@ -520,7 +521,10 @@ def tracking(logger, monitorinfo:dict, endpointconfig:dict):
           # Save tracking
           if endpointconfig['tracking']['save']['local'] or endpointconfig['tracking']['save']['s3']:
             saveresponse(logger, response, monitorinfo, 'tracking', f"_playhead_{playhead - endpointconfig['tracking']['playhead_delay']}" if endpointconfig['tracking']['playhead'] else "", False, '')
-      wait(logger, starttime, endpointconfig['tracking']['frequency'])
+      # Wait - use stop event so tracking thread exits promptly when told to stop
+      waittime = starttime - time.perf_counter() + endpointconfig['tracking']['frequency']
+      if waittime > 0:
+        monitorinfo['state']['stop'].wait(timeout=waittime)
   except Exception as e:
     logger.error(f"Encountered error in tracking thread. Exception: {str(e)} Traceback: {traceback.format_exc()}", extra={'event': 'INTERNAL_ERROR'})
   finally:

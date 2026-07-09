@@ -49,7 +49,7 @@
   },
   "loggers": {
     "service": {
-      "level": "DEBUG",
+      "level": "INFO",
       "handlers": ["fileservice"]
     },
     "monitor": {

@@ -41,7 +41,7 @@ def endpointconfigupdate(endpointconfig, userconfig):
 
 # Read endpoint information from CSV file content into endpoints dictionary
 def readcsvfile(filename, content, endpoints:dict):
-  mainlogger.info(f"Ingesting endpoints from CSV file {filename}")
+  mainlogger.debug(f"Ingesting endpoints from CSV file {filename}")
   try:
     lines = content.splitlines()
     for index, line in enumerate(lines, 1):
@@ -64,6 +64,13 @@ def readcsvfile(filename, content, endpoints:dict):
             try:
               if configpath in mainconfig['configcache']:
                 endpointconfigupdate(endpointconfig, mainconfig['configcache'][configpath])
+                # Ensure config hash is recorded even when serving from cache
+                if configpath not in mainconfig['hashtable']['config'].keys():
+                  if settings['application']['input_location'] == 's3':
+                    response = s3.head_object(Bucket=settings['aws']['bucket'], Key=configpath)
+                    mainconfig['hashtable']['config'][configpath] = response['ETag'].strip('"')
+                  else:
+                    gethash('config', configpath, True)
               else:
                 if settings['application']['input_location'] == 's3':
                   if configpath not in mainconfig['hashtable']['config'].keys():
@@ -99,6 +106,16 @@ def readcsvfile(filename, content, endpoints:dict):
     mainlogger.error(f"Error reading CSV content. Exception: {e} Traceback: {traceback.format_exc()}")
 
 
+# Read file content as bytes in a single operation
+def readfilecontent(filepath:str):
+  try:
+    with open(filepath, 'rb') as file:
+      return file.read()
+  except Exception as e:
+    mainlogger.warning(f"Failed to read file {filepath}. Exception: {e}")
+    return None
+
+
 # Get endpoint information from CSV files in input folder
 def getendpointsinfo():
   endpoints = {}
@@ -106,7 +123,7 @@ def getendpointsinfo():
   mainconfig['hashtable']['config'].clear()
   mainconfig['hashtable']['input'].clear()
   # Collect origin endpoints information
-  mainlogger.info(f"Collecting origin endpoint information")
+  mainlogger.debug(f"Collecting origin endpoint information")
   try:
     if settings['application']['input_location'] == 's3':
       response = s3.list_objects_v2(Bucket=settings['aws']['bucket'], Prefix='origins/')
@@ -118,9 +135,28 @@ def getendpointsinfo():
             readcsvfile(obj['Key'], csvdata, endpoints)
     elif settings['application']['input_location'] == 'local':
       for csvfile in localinputsfolderpath.rglob('*.csv'):
-        gethash('input', str(csvfile), True)
-        with open(csvfile, 'r') as file:
-          readcsvfile(str(csvfile), file.read(), endpoints)
+        # Read file content once and compute hash from same content to avoid race condition
+        content = readfilecontent(str(csvfile))
+        if content is not None:
+          # Guard against reading a truncated file mid-write: if file reads as 0 bytes
+          # but was previously known with endpoints, skip it (writer has truncated but not
+          # yet written new content). Next poll will pick up the actual content.
+          if len(content) == 0 and str(csvfile) in mainconfig['endpoints_by_file'] and mainconfig['endpoints_by_file'][str(csvfile)]:
+            mainlogger.debug(f"Skipping empty file {csvfile} (likely mid-write truncation)")
+            for identifier, config in mainconfig['endpoints_by_file'][str(csvfile)].items():
+              endpoints[identifier] = config
+            continue
+          hashstring = hashlib.md5(content).hexdigest()
+          mainconfig['hashtable']['input'][str(csvfile)] = hashstring
+          # Track which endpoints came from which file for truncation protection
+          file_endpoints = {}
+          readcsvfile(str(csvfile), content.decode('utf-8'), file_endpoints)
+          endpoints.update(file_endpoints)
+          mainconfig['endpoints_by_file'][str(csvfile)] = file_endpoints
+      # Clean up endpoints_by_file for deleted CSV files
+      for tracked_file in list(mainconfig['endpoints_by_file'].keys()):
+        if not pathlib.Path(tracked_file).is_file():
+          del mainconfig['endpoints_by_file'][tracked_file]
     else:
       mainlogger.warning(f"Unsupported input location: {settings['application']['input_location']}")
   except Exception as e:
@@ -208,10 +244,11 @@ def savereport(logger, monitorinfo, final:bool):
       logger.debug(f"Saved report to {monitorinfo['reporting']['filepath']}")
     if monitorinfo['config']['endpointconfig']['reports']['save']['s3']:
       bucket = monitorinfo['settings']['aws']['bucket']
-      key = str(monitorinfo['reporting']['filepath'])
-      body = json.dumps(monitorinfo['reporting']['report'], indent=2)
-      monitorinfo['s3_queue'].put((key, body))
-      logger.debug(f"Queued S3 report upload: s3://{bucket}/{key}")
+      if bucket:
+        key = str(monitorinfo['reporting']['filepath'])
+        body = json.dumps(monitorinfo['reporting']['report'], indent=2)
+        monitorinfo['s3_queue'].put((key, body))
+        logger.debug(f"Queued S3 report upload: s3://{bucket}/{key}")
   except Exception as e:
     logger.error(f"Error saving report. Exception: {str(e)} Traceback: {traceback.format_exc()}", extra={'event': 'INTERNAL_ERROR'})
 
@@ -247,6 +284,8 @@ def updateendpointconfig(logger, endpointinfofile:str, endpointidentifier:tuple,
 
 # Monitor endpoint
 def monitor(endpointidentifier:tuple, endpointconfig:dict, stopflag, changeflag, endpointinfofile, sharedwithmain, loggingconfig:dict, settings, s3_queue):
+  # Ignore SIGINT in child processes - main process handles shutdown via stop flags
+  signal.signal(signal.SIGINT, signal.SIG_IGN)
   monitorinfo = {
     'settings': settings,
     's3_queue': s3_queue,
@@ -375,8 +414,10 @@ def monitor(endpointidentifier:tuple, endpointconfig:dict, stopflag, changeflag,
         if requesttime - monitorinfo['reporting']['lastsavetime'] > monitorinfo['config']['endpointconfig']['reports']['frequency']:
           savereport(logger, monitorinfo, False)
           monitorinfo['reporting']['lastsavetime'] = requesttime
-      # Wait
-      utils.wait(logger, requesttime, endpointconfig['manifests']['frequency'])
+      # Wait - use stopflag.wait() so worker exits promptly when told to stop
+      waittime = requesttime - time.perf_counter() + endpointconfig['manifests']['frequency']
+      if waittime > 0:
+        stopflag.wait(timeout=waittime)
   except KeyboardInterrupt:
     logger.info(f"Received signal to stop, waiting for all workers to stop")
   except Exception as e:
@@ -440,7 +481,9 @@ def updateworkers():
   # Clean up stopped workers
   for identifier in stoppedworkers:
     if mainconfig['workers'][identifier].is_alive():
-      mainconfig['workers'][identifier].join()
+      mainconfig['workers'][identifier].join(timeout=3)
+      if mainconfig['workers'][identifier].is_alive():
+        mainconfig['workers'][identifier].terminate()
     del mainconfig['workers'][identifier]
     del mainconfig['stopflags'][identifier]
   # Start workers of modified origin endpoints
@@ -580,7 +623,7 @@ def saveendpointinfotofile(endpointinfo:dict):
   except Exception as e:
     mainlogger.error(f"Failed to save endpoint info to file. Exception: {e} Traceback: {traceback.format_exc()}")
   else:
-    mainlogger.info(f"Saved endpoint information to {endpointinfofile.name}")
+    mainlogger.debug(f"Saved endpoint information to {endpointinfofile.name}")
 
 
 # Get hostname / instance id for service metric dimension
@@ -769,6 +812,7 @@ if __name__ == '__main__':
       'config': {}
     },
     'configcache': {},
+    'endpoints_by_file': {},
     'changedworkloads': [],
     'hostname': '',
     's3_queue': multiprocessing.Queue(maxsize=max_s3_upload_queue_size),
@@ -872,6 +916,7 @@ if __name__ == '__main__':
   # Temp file for storing endpoint information
   endpointinfofile = tempfile.NamedTemporaryFile(mode='w+', delete=False)
   endpointinfofile.close()
+  mainlogger.info(f"Endpoint information file: {endpointinfofile.name}")
 
   # Prepare dasbhoard templates
   env = Environment(loader=FileSystemLoader('templates'), autoescape=select_autoescape(), trim_blocks=True, lstrip_blocks=True)
@@ -891,19 +936,84 @@ if __name__ == '__main__':
     mainlogger.info(f"Now monitoring {len(mainconfig['workers'])} endpoints")
 
     while True:
-      # Check for input and config changes
-      inputorconfigchanges = checkforinputorconfigchanges()
-      if inputorconfigchanges:
-        time.sleep(5)
-        for item in inputorconfigchanges:
-          mainlogger.info(f"Input or config has changed, {item['change']}: {item['filename']}")
-          # Clear config cache
+      if settings['application']['input_location'] == 'local':
+        # For local input, always read current file state and diff against running workers.
+        # This eliminates race conditions from hash-based change detection when files are
+        # modified frequently by external processes.
+        # Save previous config hashes before getendpointsinfo() clears and rebuilds them
+        prev_config_hashes = dict(mainconfig['hashtable']['config'])
+        newendpoints = getendpointsinfo()
+        # Check if endpoints or configs actually changed
+        endpoints_changed = newendpoints != mainconfig['endpoints']
+        # Detect config change by comparing new config hashes against previous
+        config_changed = mainconfig['hashtable']['config'] != prev_config_hashes
+        if endpoints_changed or config_changed:
+          if endpoints_changed:
+            new_ids = set(newendpoints.keys()) - set(mainconfig['endpoints'].keys())
+            removed_ids = set(mainconfig['endpoints'].keys()) - set(newendpoints.keys())
+            if new_ids:
+              for eid in new_ids:
+                mainlogger.info(f"New endpoint: {eid[0]}/{eid[1]}/{eid[2]}/{eid[3]}/{eid[4]}/{str(eid[5]).lower()}")
+            if removed_ids:
+              for eid in removed_ids:
+                mainlogger.info(f"Removed endpoint: {eid[0]}/{eid[1]}/{eid[2]}/{eid[3]}/{eid[4]}/{str(eid[5]).lower()}")
+          if config_changed:
+            mainlogger.info(f"Config file change detected")
+            mainconfig['configcache'].clear()
+            # Re-read endpoints with fresh config cache
+            newendpoints = getendpointsinfo()
+          saveendpointinfotofile(newendpoints)
+          # Determine what needs to start/stop
+          stoppedworkers = []
+          workerstostart = []
+          for identifier in list(mainconfig['workers'].keys()):
+            if identifier not in newendpoints.keys():
+              mainconfig['stopflags'][identifier].set()
+              if (identifier[0], identifier[2], identifier[4]) not in mainconfig['changedworkloads']:
+                mainconfig['changedworkloads'].append((identifier[0], identifier[2], identifier[4]))
+              stoppedworkers.append(identifier)
+          for identifier, endpointconfig in newendpoints.items():
+            if identifier not in mainconfig['workers']:
+              startmonitorworker(identifier, endpointconfig)
+              if (identifier[0], identifier[2], identifier[4]) not in mainconfig['changedworkloads']:
+                mainconfig['changedworkloads'].append((identifier[0], identifier[2], identifier[4]))
+            elif endpointconfig != mainconfig['endpoints'].get(identifier):
+              if needtorestartworker(endpointconfig, mainconfig['endpoints'].get(identifier)):
+                mainconfig['stopflags'][identifier].set()
+                stoppedworkers.append(identifier)
+                workerstostart.append(identifier)
+              else:
+                mainconfig['changeflags'][identifier].set()
+              if (identifier[0], identifier[2], identifier[4]) not in mainconfig['changedworkloads']:
+                mainconfig['changedworkloads'].append((identifier[0], identifier[2], identifier[4]))
+          for identifier in stoppedworkers:
+            if mainconfig['workers'][identifier].is_alive():
+              mainconfig['workers'][identifier].join(timeout=3)
+              if mainconfig['workers'][identifier].is_alive():
+                mainconfig['workers'][identifier].terminate()
+            del mainconfig['workers'][identifier]
+            del mainconfig['stopflags'][identifier]
+            if identifier in mainconfig['changeflags']:
+              del mainconfig['changeflags'][identifier]
+          for identifier in workerstostart:
+            startmonitorworker(identifier, newendpoints[identifier])
+          mainconfig['endpoints'] = newendpoints
+          mainlogger.info(f"Now monitoring {len(mainconfig['workers'])} endpoints")
+          if len(mainconfig['changedworkloads']) > 0 and settings['aws']['dashboards']:
+            createdashboards()
+          mainconfig['changedworkloads'].clear()
+      else:
+        # For S3 input, use hash/etag-based change detection (S3 writes are atomic)
+        inputorconfigchanges = checkforinputorconfigchanges()
+        if inputorconfigchanges:
+          for item in inputorconfigchanges:
+            mainlogger.info(f"Input or config has changed, {item['change']}: {item['filename']}")
           mainconfig['configcache'].clear()
-        mainconfig['endpoints'] = updateworkers()
-        mainlogger.info(f"Now monitoring {len(mainconfig['workers'])} endpoints")
-        if len(mainconfig['changedworkloads']) > 0 and settings['aws']['dashboards']:
-          createdashboards()
-        mainconfig['changedworkloads'].clear()
+          mainconfig['endpoints'] = updateworkers()
+          mainlogger.info(f"Now monitoring {len(mainconfig['workers'])} endpoints")
+          if len(mainconfig['changedworkloads']) > 0 and settings['aws']['dashboards']:
+            createdashboards()
+          mainconfig['changedworkloads'].clear()
       # Check S3 upload queue
       s3_queue_size = mainconfig['s3_queue'].qsize()
       if s3_queue_size > max_s3_upload_queue_size * 0.5:

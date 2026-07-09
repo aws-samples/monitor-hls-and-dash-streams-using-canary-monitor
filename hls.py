@@ -299,8 +299,10 @@ def monitor(renditionid, url:str, rendition:dict, monitorinfo:dict, primary:bool
         # Check for staleness
         if requesttime - monitorinfo['state']['starttimeperf'] > max(monitorinfo['manifest'][renditionalias]['buffer']['size'], monitorinfo['config']['endpointconfig']['manifests']['frequency']):
           utils.checkforstaleness(logger, monitorinfo, requesttime, renditionalias, renditionid)
-      # Wait
-      utils.wait(logger, requesttime, monitorinfo['config']['endpointconfig']['manifests']['frequency'])
+      # Wait - use stop event so thread exits promptly when told to stop
+      waittime = requesttime - time.perf_counter() + monitorinfo['config']['endpointconfig']['manifests']['frequency']
+      if waittime > 0:
+        monitorinfo['state']['stop'].wait(timeout=waittime)
   except Exception as e:
     logger.error(f"Encountered error while monitoring. Exception: {str(e)} Traceback: {traceback.format_exc()}", extra={'event': 'INTERNAL_ERROR'})
   finally:
