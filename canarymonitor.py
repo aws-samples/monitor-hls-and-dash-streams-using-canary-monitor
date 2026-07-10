@@ -138,17 +138,9 @@ def getendpointsinfo():
         # Read file content once and compute hash from same content to avoid race condition
         content = readfilecontent(str(csvfile))
         if content is not None:
-          # Guard against reading a truncated file mid-write: if file reads as 0 bytes
-          # but was previously known with endpoints, skip it (writer has truncated but not
-          # yet written new content). Next poll will pick up the actual content.
-          if len(content) == 0 and str(csvfile) in mainconfig['endpoints_by_file'] and mainconfig['endpoints_by_file'][str(csvfile)]:
-            mainlogger.debug(f"Skipping empty file {csvfile} (likely mid-write truncation)")
-            for identifier, config in mainconfig['endpoints_by_file'][str(csvfile)].items():
-              endpoints[identifier] = config
-            continue
           hashstring = hashlib.md5(content).hexdigest()
           mainconfig['hashtable']['input'][str(csvfile)] = hashstring
-          # Track which endpoints came from which file for truncation protection
+          # Track which endpoints came from which file
           file_endpoints = {}
           readcsvfile(str(csvfile), content.decode('utf-8'), file_endpoints)
           endpoints.update(file_endpoints)
@@ -944,8 +936,13 @@ if __name__ == '__main__':
         newendpoints = getendpointsinfo()
         # Check if endpoints or configs actually changed
         endpoints_changed = newendpoints != mainconfig['endpoints']
-        # Detect config change by comparing new config hashes against previous
-        config_changed = mainconfig['hashtable']['config'] != prev_config_hashes
+        # Detect config change: only if a config file that exists in both old and new has a different hash
+        # (config files appearing/disappearing is a result of endpoint changes, not a config modification)
+        config_changed = False
+        for configpath, newhash in mainconfig['hashtable']['config'].items():
+          if configpath in prev_config_hashes and prev_config_hashes[configpath] != newhash:
+            config_changed = True
+            break
         if endpoints_changed or config_changed:
           if endpoints_changed:
             new_ids = set(newendpoints.keys()) - set(mainconfig['endpoints'].keys())
