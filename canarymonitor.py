@@ -636,11 +636,10 @@ def gethostname():
     # Get instance ID using token
     instance_response = http.request('GET','http://169.254.169.254/latest/meta-data/instance-id', headers={'X-aws-ec2-metadata-token': token}, timeout=1.0)
     mainconfig['hostname'] = instance_response.data.decode('utf-8')
-    mainlogger.info(f"Got hostname {mainconfig['hostname']}")
   except Exception as e:
     mainconfig['hostname'] = socket.gethostname()
   finally:
-    mainlogger.info(f"Got hostname '{mainconfig['hostname']}'")
+    mainlogger.info(f"Got hostname {mainconfig['hostname']}")
 
 
 def publishservicemetrics():
