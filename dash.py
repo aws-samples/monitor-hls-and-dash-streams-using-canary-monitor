@@ -34,51 +34,94 @@ def checklipsync(logger, monitorinfo:dict, xmlperiod, segmenttemplates:list):
     logger.error(f"Error when checking lip sync. Exception: {str(e)} Traceback: {traceback.format_exc()}", extra={'event': 'INTERNAL_ERROR'})
 
 
+# Iterate over segments in a segment timeline, yielding (d, compt, segmentnumber) for each segment.
+# Supports both explicit S elements and pattern-referenced S elements (Segment Duration Patternization).
+def _iteratesegments(xmlsegmenttemplate, xmlsegmenttimeline, ns, startnumber):
+  # Parse Pattern elements from SegmentTemplate (Pattern is a child of SegmentTemplate, not SegmentTimeline)
+  patterns = {}
+  for pattern_elem in xmlsegmenttemplate.findall(f"{{{ns['default']}}}Pattern"):
+    pattern_id = pattern_elem.get('id')
+    durations = []
+    for p in pattern_elem.findall(f"{{{ns['default']}}}P"):
+      d = int(p.get('d'))
+      r = int(p.get('r', 0))
+      durations.extend([d] * (r + 1))
+    patterns[pattern_id] = durations
+
+  compt = 0
+  segmentnumber = startnumber
+  for element in xmlsegmenttimeline:
+    if element.tag != f"{{{ns['default']}}}S":
+      continue
+    t = int(element.get('t', compt))
+    r = int(element.get('r', 0))
+    if t != compt:
+      compt = t
+
+    pattern_id = element.get('p')
+    if pattern_id and pattern_id in patterns:
+      # Pattern-referenced S element (SDP)
+      # r means repeat the entire pattern r additional times
+      # pE is the starting entry index for the first repetition only
+      pattern = patterns[pattern_id]
+      pattern_len = len(pattern)
+      pe = int(element.get('pE', 0))
+      for i in range(r + 1):
+        start = pe if i == 0 else 0
+        for j in range(start, pattern_len):
+          d = pattern[j]
+          yield d, compt, segmentnumber
+          compt += d
+          segmentnumber += 1
+    else:
+      # Explicit S element
+      d = int(element.get('d'))
+      for i in range(r + 1):
+        yield d, compt, segmentnumber
+        compt += d
+        segmentnumber += 1
+
+
 # Find new segments in a period
 def getsegmentinfo(logger, monitorinfo:dict, segmenttemplate, xmlperiod, allsegments:bool, onlyvalidation:bool):
   ns = {'default': 'urn:mpeg:dash:schema:mpd:2011'}
   periodid = xmlperiod.get('id', '')
   try:
-    compt = 0
     availabilitystarttime = monitorinfo['manifest']['primary'].get('availabilitystarttime', None)
     periodstart = isodate.parse_duration(xmlperiod.get('start', 'PT0S')).total_seconds()
     timescale = int(segmenttemplate['xmlsegmenttemplate'].get('timescale', 1))
-    segmentnumber = int(segmenttemplate['xmlsegmenttemplate'].get('startNumber', 0))
+    startnumber = int(segmenttemplate['xmlsegmenttemplate'].get('startNumber', 0))
     pto = int(segmenttemplate['xmlsegmenttemplate'].get('presentationTimeOffset', 0))
     xmlsegmenttimeline = segmenttemplate['xmlsegmenttemplate'].find('default:SegmentTimeline', ns)
     totalduration = 0.0
-    for element in xmlsegmenttimeline:
-      # No pattern
-      if element.tag == f"{{{ns['default']}}}S":
-        d = int(element.get('d'))
-        t = int(element.get('t', compt))
-        r = int(element.get('r', 0))
-        if t != compt:
-          compt = t
-        for i in range(r + 1):
-          if not onlyvalidation:
-            if monitorinfo['manifest']['primary']['foundlastsegment'] or allsegments:
-              segment = {
-                'n': segmentnumber,
-                'd': d,
-                'dsec': d / timescale,
-                't': compt,
-                'nextt': compt + d,
-                'pts': periodstart + (compt - pto) / timescale,
-                'ast+pts': availabilitystarttime + timedelta(seconds=periodstart + (compt - pto) / timescale) if availabilitystarttime else None,
-                't+d-pto': (compt + d - pto) / timescale
-              }
-              monitorinfo['manifest']['primary']['new']['segments'].setdefault(periodid, []).append(segment)
-              if not allsegments:
-                logger.debug(f"Found new segment in period {periodid}: {utils.printdictionary(logger, segment)}")
-            else:
-              if periodid == monitorinfo['manifest']['primary']['last']['period']:
-                if compt == monitorinfo['manifest']['primary']['last']['segment']['t']:
-                  monitorinfo['manifest']['primary']['foundlastsegment'] = True
-          compt = compt + d
-          segmentnumber = segmentnumber + 1
-          totalduration += totalduration + d
-    return {'last_pts': round(periodstart + (compt - pto) / timescale, 3), 'last_n': segmentnumber, 'total_duration': round(totalduration, 3)}
+    compt = 0
+    segmentnumber = startnumber
+    d = 0
+    for d, compt, segmentnumber in _iteratesegments(segmenttemplate['xmlsegmenttemplate'], xmlsegmenttimeline, ns, startnumber):
+      if not onlyvalidation:
+        if monitorinfo['manifest']['primary']['foundlastsegment'] or allsegments:
+          segment = {
+            'n': segmentnumber,
+            'd': d,
+            'dsec': d / timescale,
+            't': compt,
+            'nextt': compt + d,
+            'pts': periodstart + (compt - pto) / timescale,
+            'ast+pts': availabilitystarttime + timedelta(seconds=periodstart + (compt - pto) / timescale) if availabilitystarttime else None,
+            't-pto+d': (compt + d - pto) / timescale
+          }
+          monitorinfo['manifest']['primary']['new']['segments'].setdefault(periodid, []).append(segment)
+          if not allsegments:
+            logger.debug(f"Found new segment in period {periodid}: {utils.printdictionary(logger, segment)}")
+        else:
+          if periodid == monitorinfo['manifest']['primary']['last']['period']:
+            if compt == monitorinfo['manifest']['primary']['last']['segment']['t']:
+              monitorinfo['manifest']['primary']['foundlastsegment'] = True
+      totalduration = totalduration + d
+    # After iteration, compt and segmentnumber reflect the state after the last yielded segment
+    compt_end = compt + d if totalduration > 0 else 0
+    segmentnumber_end = segmentnumber + 1 if totalduration > 0 else startnumber
+    return {'last_pts': round(periodstart + (compt_end - pto) / timescale, 3), 'last_n': segmentnumber_end, 'total_duration': round(totalduration, 3)}
   except Exception as e:
     logger.error(f"Error finding new segments in period {periodid}. Exception: {str(e)} Traceback: {traceback.format_exc()} Segmenttemplate: {et.tostring(segmenttemplate['xmlsegmenttemplate'], encoding='unicode')}", extra={'event': 'INTERNAL_ERROR'})
 
@@ -378,7 +421,7 @@ def gothroughsegments(logger, monitorinfo:dict, new:bool=False):
       period_advertised_duration = monitorinfo['manifest']['primary']['periods'][periodid].get('advertised_duration')
       if period_advertised_duration:
         period_advertised_duration_sec = isodate.parse_duration(period_advertised_duration).total_seconds()
-        duration_delta = monitorinfo['manifest']['primary']['last']['segment']['t+d-pto'] - period_advertised_duration_sec
+        duration_delta = monitorinfo['manifest']['primary']['last']['segment']['t-pto+d'] - period_advertised_duration_sec
         if duration_delta > 1:
           logger.warning(f"Segments in period {periodid} exceed the period duration by {round(duration_delta, 3)} s", extra={'event': 'PERIOD_DURATION_EXCEEDED'})
     # If this is not 1st manifest request
