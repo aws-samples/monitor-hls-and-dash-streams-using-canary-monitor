@@ -240,6 +240,8 @@ def savereport(logger, monitorinfo, final:bool):
         key = str(monitorinfo['reporting']['filepath'])
         body = json.dumps(monitorinfo['reporting']['report'], indent=2)
         monitorinfo['s3_queue'].put((key, body))
+        with monitorinfo['s3_queue_counter'].get_lock():
+          monitorinfo['s3_queue_counter'].value += 1
         logger.debug(f"Queued S3 report upload: s3://{bucket}/{key}")
   except Exception as e:
     logger.error(f"Error saving report. Exception: {str(e)} Traceback: {traceback.format_exc()}", extra={'event': 'INTERNAL_ERROR'})
@@ -275,12 +277,13 @@ def updateendpointconfig(logger, endpointinfofile:str, endpointidentifier:tuple,
 
 
 # Monitor endpoint
-def monitor(endpointidentifier:tuple, endpointconfig:dict, stopflag, changeflag, endpointinfofile, sharedwithmain, loggingconfig:dict, settings, s3_queue):
+def monitor(endpointidentifier:tuple, endpointconfig:dict, stopflag, changeflag, endpointinfofile, sharedwithmain, loggingconfig:dict, settings, s3_queue, s3_queue_counter):
   # Ignore SIGINT in child processes - main process handles shutdown via stop flags
   signal.signal(signal.SIGINT, signal.SIG_IGN)
   monitorinfo = {
     'settings': settings,
     's3_queue': s3_queue,
+    's3_queue_counter': s3_queue_counter,
     'config': {
       'type': endpointidentifier[0],
       'technology': endpointidentifier[1],
@@ -493,7 +496,7 @@ def startmonitorworker(identifier:tuple, endpointconfig:dict):
   else:
     mainconfig['stopflags'][identifier] = multiprocessing.Event()
     mainconfig['changeflags'][identifier] = multiprocessing.Event()
-    mainconfig['workers'][identifier] = multiprocessing.Process(target=monitor, args=(identifier, endpointconfig, mainconfig['stopflags'][identifier], mainconfig['changeflags'][identifier], endpointinfofile.name, sharedwithmain, loggingconfig, settings, mainconfig['s3_queue']))
+    mainconfig['workers'][identifier] = multiprocessing.Process(target=monitor, args=(identifier, endpointconfig, mainconfig['stopflags'][identifier], mainconfig['changeflags'][identifier], endpointinfofile.name, sharedwithmain, loggingconfig, settings, mainconfig['s3_queue'], mainconfig['s3_queue_counter']))
   mainconfig['workers'][identifier].start()
   # Wait 50 milliseconds to avoid spike in new processes
   time.sleep(0.05)
@@ -666,7 +669,7 @@ def publishservicemetrics():
 
 
 # Write files to S3
-def start_s3_upload_threads(queue, settings, logger, num_threads=10):
+def start_s3_upload_threads(queue, s3_queue_counter, settings, logger, num_threads=10):
   import threading
   def upload_worker():
     while True:
@@ -674,6 +677,8 @@ def start_s3_upload_threads(queue, settings, logger, num_threads=10):
         item = queue.get()
         if item is None:
           break
+        with s3_queue_counter.get_lock():
+          s3_queue_counter.value -= 1
         # Unpack upload request
         key, body = item
         # Upload to S3
@@ -807,6 +812,7 @@ if __name__ == '__main__':
     'changedworkloads': [],
     'hostname': '',
     's3_queue': multiprocessing.Queue(maxsize=max_s3_upload_queue_size),
+    's3_queue_counter': multiprocessing.Value('i', 0),
     's3_threads': []  # S3 upload threads
   }
 
@@ -839,7 +845,7 @@ if __name__ == '__main__':
           mainlogger.info(f"Found bucket {settings['aws']['bucket']}")
           # Start S3 upload threads
           if settings['aws']['bucket']:
-            mainconfig['s3_threads'] = start_s3_upload_threads(mainconfig['s3_queue'], settings, mainlogger)
+            mainconfig['s3_threads'] = start_s3_upload_threads(mainconfig['s3_queue'], mainconfig['s3_queue_counter'], settings, mainlogger)
         except ClientError as e:
           if e.response['Error']['Code'] == '404':
             mainlogger.error(f"Error finding S3 bucket. Exception: {e}")
@@ -1011,7 +1017,7 @@ if __name__ == '__main__':
             createdashboards()
           mainconfig['changedworkloads'].clear()
       # Check S3 upload queue
-      s3_queue_size = mainconfig['s3_queue'].qsize()
+      s3_queue_size = mainconfig['s3_queue_counter'].value
       if s3_queue_size > max_s3_upload_queue_size * 0.5:
         mainlogger.warning(f"S3 upload is backed up ({(s3_queue_size/max_s3_upload_queue_size) * 100}% full)")
       # Publish metrics
