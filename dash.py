@@ -9,6 +9,29 @@ class UnsupportedManifest(Exception):
   pass
 
 
+# Parse a period-level SupplementalProperty carrying a UTC wall-clock timestamp.
+# Returns a timezone-aware UTC datetime, or None when the property is absent or unparseable.
+# Some origins do not emit this property, in which case PdtDelta is simply not computed.
+def getsupplementaldatetime(logger, xmlperiod):
+  ns = {'default': 'urn:mpeg:dash:schema:mpd:2011'}
+  try:
+    for xmlsupplementalproperty in xmlperiod.findall('default:SupplementalProperty', ns):
+      # Only consider a supplemental property whose scheme indicates a UTC time value
+      if 'utc' not in xmlsupplementalproperty.get('schemeIdUri', '').lower():
+        continue
+      value = xmlsupplementalproperty.get('value')
+      if not value:
+        continue
+      try:
+        return datetime.strptime(value, '%Y-%m-%dT%H:%M:%S.%fZ').replace(tzinfo=timezone.utc)
+      except ValueError:
+        logger.warning(f"Unable to parse SupplementalProperty UTC time value '{value}'", extra={'event': 'NON_COMPLIANT_MANIFEST'})
+        return None
+  except Exception as e:
+    logger.error(f"Error parsing SupplementalProperty. Exception: {str(e)} Traceback: {traceback.format_exc()}", extra={'event': 'INTERNAL_ERROR'})
+  return None
+
+
 def checklipsync(logger, monitorinfo:dict, xmlperiod, segmenttemplates:list):
   templates_info = []
   try:
@@ -293,12 +316,13 @@ def getadaptationsetsinfo(logger, xmlperiod, periodinfo:dict, monitorinfo:dict):
         representation['resolution'] = f"{representation['width']}x{representation['height']}" if representation['width'] and representation['height'] else None
         adaptationset['representations'].append(representation)
       # Check for repeating mime types
-      if 'video' in adaptationset['mime_type'] and adaptationset['mime_type'] in mimetypes:
+      mimetype = str(adaptationset['mime_type'] or '')
+      if 'video' in mimetype and mimetype in mimetypes:
         logger.warning(f"Period {periodid} contains multiple video adaptation sets", extra={'event': 'MULTIPLE_VIDEO_ADAPTATION_SETS'})
       # Add adaptation set info to adaptation sets
       periodinfo['adaptation_sets'].append(adaptationset)
       # Add mime type to set
-      mimetypes.add(adaptationset['mime_type'])
+      mimetypes.add(mimetype)
     # Check for required renditions
     mimetypemap = {
       'video': 'video',
@@ -334,6 +358,10 @@ def getperiodinfo(logger, xmlperiod, monitorinfo:dict):
       getadaptationsetsinfo(logger, xmlperiod, periodinfo, monitorinfo)
       # Get event stream info
       geteventstreamsinfo(logger, xmlperiod, periodinfo, monitorinfo)
+      # Get supplemental property UTC time (used for PdtDelta), when present
+      supplementaldatetime = getsupplementaldatetime(logger, xmlperiod)
+      if supplementaldatetime is not None:
+        periodinfo['supplemental_property'] = {'utc_time': f"{supplementaldatetime}"}
       # Save period info
       monitorinfo['manifest']['primary']['periods'][xmlperiodid] = periodinfo
       logger.info(f"Found {'new ' if monitorinfo['manifest']['primary']['foundlastsegment'] else ''}period, id {xmlperiodid}: {periodinfo}")
@@ -440,6 +468,14 @@ def gothroughsegments(logger, monitorinfo:dict, new:bool=False):
               f"Segment availability time (availabilityStartTime + period start + (t – presentationTimeOffset) / timescale) is {abs(availabilitydelta)} seconds in the future, which is more than the configured 'max_segment_availability_delta' threshold of {monitorinfo['config']['endpointconfig']['validations']['custom']['max_segment_availability_delta']['in_future']}",
               extra={'event': 'SEGMENT_AVAILABILITY_DELTA'})
           utils.addmetric(logger, monitorinfo, 'SegmentAvailabilityDelta', availabilitydelta, 'Seconds', [])
+        # Check for PDT delta of last new segment, when the last segment's period carries a supplemental UTC time.
+        # The supplemental property is fixed for the life of the period and was read once when the period was detected.
+        lastperiodinfo = monitorinfo['manifest']['primary']['periods'].get(monitorinfo['manifest']['primary']['last']['period'], {})
+        supplementalutctime = lastperiodinfo.get('supplemental_property', {}).get('utc_time')
+        if supplementalutctime and lastsegment.get('t-pto+d') is not None:
+          supplementaldatetime = datetime.fromisoformat(supplementalutctime)
+          pdtdelta = round((supplementaldatetime - monitorinfo['manifest']['primary']['manifestrequesttime']).total_seconds() + lastsegment['t-pto+d'])
+          utils.addmetric(logger, monitorinfo, 'PdtDelta', pdtdelta, 'Seconds', [])
       # Check if found last segment
       monitorinfo['manifest']['primary']['lastsegmentnotfoundcount'] = 0 if monitorinfo['manifest']['primary']['foundlastsegment'] else monitorinfo['manifest']['primary']['lastsegmentnotfoundcount'] + 1
       if 0 < monitorinfo['manifest']['primary']['lastsegmentnotfoundcount'] < 3:

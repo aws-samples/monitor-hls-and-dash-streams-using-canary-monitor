@@ -278,8 +278,10 @@ def updateendpointconfig(logger, endpointinfofile:str, endpointidentifier:tuple,
 
 # Monitor endpoint
 def monitor(endpointidentifier:tuple, endpointconfig:dict, stopflag, changeflag, endpointinfofile, sharedwithmain, loggingconfig:dict, settings, s3_queue, s3_queue_counter):
-  # Ignore SIGINT in child processes - main process handles shutdown via stop flags
-  signal.signal(signal.SIGINT, signal.SIG_IGN)
+  # Ignore SIGINT in child processes - main process handles shutdown via stop flags.
+  # Only applicable to process workers; setting signal handlers is not allowed from non-main threads.
+  if not settings['application']['threads']:
+    signal.signal(signal.SIGINT, signal.SIG_IGN)
   monitorinfo = {
     'settings': settings,
     's3_queue': s3_queue,
@@ -492,7 +494,7 @@ def startmonitorworker(identifier:tuple, endpointconfig:dict):
   if settings['application']['threads']:
     mainconfig['stopflags'][identifier] = threading.Event()
     mainconfig['changeflags'][identifier] = threading.Event()
-    mainconfig['workers'][identifier] = threading.Thread(target=monitor, args=(identifier, endpointconfig, mainconfig['stopflags'][identifier], mainconfig['changeflags'][identifier], endpointinfofile.name, sharedwithmain, loggingconfig, settings))
+    mainconfig['workers'][identifier] = threading.Thread(target=monitor, args=(identifier, endpointconfig, mainconfig['stopflags'][identifier], mainconfig['changeflags'][identifier], endpointinfofile.name, sharedwithmain, loggingconfig, settings, mainconfig['s3_queue'], mainconfig['s3_queue_counter']))
   else:
     mainconfig['stopflags'][identifier] = multiprocessing.Event()
     mainconfig['changeflags'][identifier] = multiprocessing.Event()
@@ -1036,5 +1038,3 @@ if __name__ == '__main__':
     mainlogger.info(f"Stopping S3 upload threads")
     if mainconfig['s3_threads']:
       stop_s3_threads(mainconfig['s3_queue'], mainconfig['s3_threads'], mainlogger)
-
-
